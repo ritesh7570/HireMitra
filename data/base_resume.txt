@@ -1,0 +1,26 @@
+# Base resume text used by the resume tailoring step.
+
+Ritesh Kumar
+Final-year B.Tech Information Technology student, Heritage Institute of Technology, Kolkata
+Graduation: May 2026 | CGPA: 8.34
+Email: riteshkr0759@gmail.com
+LinkedIn: linkedin.com/in/ritesh-kumar-919b0121b
+GitHub: github.com/ritesh7570
+Portfolio: ritesh7570.github.io/MY_PORTFOLIO
+LeetCode: leetcode.com/u/levi_ritesh
+
+Core Skills
+- Node.js, Express.js, MongoDB, REST APIs
+- FFmpeg, OpenAI Whisper, OpenRouter
+- Basic React workflow knowledge
+
+Experience
+- Backend Developer Intern, Government of Punjab: Worked on Mentor Connect platform backend features.
+- Software Development Intern, Taurus Hard & Soft Solution: Built and supported software development tasks.
+
+Achievements
+- National Winner, Smart India Hackathon 2024, Team Connexus, 1st place, INR 50,000 prize.
+
+Projects
+- Sarthi: AI-powered learning platform converting video to transcript using Whisper, then generating notes and quizzes using OpenRouter. Stack: Node.js, MongoDB, FFmpeg, Whisper, OpenRouter. GitHub: github.com/ritesh7570/Sarthi
+- Connexus / Alumni Connect: Alumni mentorship portal with agent-request audit trail for security review. Stack: Node.js, MongoDB, Express. GitHub: github.com/ritesh7570/ALUMNI_CONNECT

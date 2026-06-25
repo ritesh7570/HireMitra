@@ -1,0 +1,22 @@
+{
+  "name": "job-application-agent",
+  "version": "1.0.0",
+  "description": "CLI agent for checking job eligibility, tailoring resumes, drafting outreach, and logging applications.",
+  "main": "agent.js",
+  "type": "module",
+  "scripts": {
+    "start": "node agent.js"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bullmq": "^5.58.7",
+    "dotenv": "^16.4.7",
+    "ioredis": "^5.5.0",
+    "mongoose": "^8.9.5",
+    "nodemailer": "^8.0.10",
+    "playwright": "^1.49.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
