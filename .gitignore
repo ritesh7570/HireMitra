@@ -1,0 +1,13 @@
+node_modules/
+.env
+output/*.txt
+*.log
+client/node_modules/
+client/dist/
+server/node_modules/
+server/output/*.txt
+server/output/*.tex
+server/output/*.pdf
+server/data/profile.json
+server/data/scraped_jobs.json
+server/data/hr_batch_state.json

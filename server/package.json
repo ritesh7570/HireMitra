@@ -1,0 +1,28 @@
+{
+  "name": "job-application-agent-server",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node index.js",
+    "cli": "node agent.js",
+    "auto": "node autoApply.js",
+    "scrape": "node scrape.js",
+    "pipeline": "node pipeline.js",
+    "pipeline:fresh": "node pipeline.js --fresh"
+  },
+  "dependencies": {
+    "@google/generative-ai": "^0.24.1",
+    "bullmq": "^5.58.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^5.2.1",
+    "ioredis": "^5.5.0",
+    "mongoose": "^8.9.5",
+    "nodemailer": "^9.0.1",
+    "playwright": "^1.49.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

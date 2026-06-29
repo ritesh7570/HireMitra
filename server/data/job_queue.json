@@ -1,0 +1,11 @@
+[
+  {
+    "jd": "Backend Developer Intern role focused on Node.js, Express.js, MongoDB, REST APIs, and API integrations. The intern will build and maintain backend services, debug production issues, and collaborate with frontend engineers. Location: India remote. Contact: hiring@example.com",
+    "recruiterEmail": "hiring@example.com",
+    "recruiterName": "Priya Sharma",
+    "company": "ExampleTech",
+    "role": "Backend Developer Intern",
+    "sendEmail": false,
+    "sendReferral": false
+  }
+]

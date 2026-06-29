@@ -2,18 +2,33 @@
   "name": "job-application-agent",
   "version": "1.0.0",
   "description": "CLI agent for checking job eligibility, tailoring resumes, drafting outreach, and logging applications.",
-  "main": "agent.js",
+  "main": "server/index.js",
   "type": "module",
   "scripts": {
-    "start": "node agent.js"
+    "dev": "concurrently \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:server": "node --watch server/index.js",
+    "dev:client": "cd client && npm run dev",
+    "build": "cd client && npm run build",
+    "start": "node server/index.js",
+    "cli": "node server/agent.js",
+    "auto": "node server/autoApply.js",
+    "scrape": "node server/pipeline.js --scrape-only",
+    "pipeline": "node server/pipeline.js",
+    "pipeline:fresh": "node server/pipeline.js --fresh"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "bullmq": "^5.58.7",
+    "concurrently": "^9.2.3",
+    "cors": "^2.8.6",
     "dotenv": "^16.4.7",
+    "express": "^5.2.1",
     "ioredis": "^5.5.0",
+    "mammoth": "^1.12.0",
     "mongoose": "^8.9.5",
-    "nodemailer": "^8.0.10",
+    "multer": "^2.2.0",
+    "nodemailer": "^9.0.1",
+    "pdf-parse": "^2.4.5",
     "playwright": "^1.49.1"
   },
   "engines": {

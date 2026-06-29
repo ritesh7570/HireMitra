@@ -1,0 +1,9 @@
+.env
+node_modules/
+output/*.txt
+output/*.tex
+output/*.pdf
+*.log
+data/profile.json
+data/scraped_jobs.json
+data/hr_batch_state.json
