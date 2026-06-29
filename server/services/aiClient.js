@@ -69,7 +69,10 @@ export class AiClient {
       model: this.geminiModel,
       generationConfig: {
         temperature: 0.3,
-        responseMimeType: 'application/json'
+        responseMimeType: 'application/json',
+        // Without this, large outputs (e.g. a 100+ entry HR contact list) got cut off
+        // mid-JSON at whatever the model's default output cap was.
+        maxOutputTokens: 8192
       }
     });
 
@@ -100,6 +103,7 @@ export class AiClient {
       body: JSON.stringify({
         model,
         temperature: 0.3,
+        max_tokens: 8000,
         messages: [
           {
             role: 'user',

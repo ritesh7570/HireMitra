@@ -23,7 +23,12 @@ export default function HrContacts() {
     setMessage('');
     try {
       const result = await uploadHrList(file);
-      setMessage(`Found ${result.found} contact(s) — added ${result.inserted}, skipped ${result.skipped} duplicate(s).`);
+      const chunkNote = result.chunkFailures
+        ? ` (${result.chunkFailures}/${result.chunks} chunk(s) failed and were skipped)`
+        : '';
+      setMessage(
+        `Found ${result.found} contact(s) across ${result.chunks} chunk(s) — added ${result.inserted}, skipped ${result.skipped} duplicate(s).${chunkNote}`
+      );
       await load();
     } catch (err) {
       setError(err.message);

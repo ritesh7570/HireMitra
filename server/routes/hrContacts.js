@@ -8,7 +8,32 @@ import { listHrContacts, saveHrContacts, setHrContactSent } from '../services/hr
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
 
-const MAX_RAW_TEXT_CHARS = 20000;
+const MAX_RAW_TEXT_CHARS = 60000;
+const CHUNK_SIZE_CHARS = 4000;
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Splits on line boundaries (never mid-line) so one contact's details don't get split
+// across two chunks. A single giant AI call for a 100+ entry list was unreliable —
+// large prompts + large structured output hit truncation, timeouts, and rate limits
+// even with fallback models. Many small calls are far more likely to each succeed.
+function chunkText(text, maxChars) {
+  const lines = text.split('\n');
+  const chunks = [];
+  let current = '';
+
+  for (const line of lines) {
+    if (current && current.length + line.length + 1 > maxChars) {
+      chunks.push(current);
+      current = '';
+    }
+    current += (current ? '\n' : '') + line;
+  }
+  if (current) chunks.push(current);
+  return chunks;
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -32,18 +57,40 @@ router.post('/upload', upload.single('file'), async (req, res) => {
     }
 
     const truncated = rawText.length > MAX_RAW_TEXT_CHARS;
+    const chunks = chunkText(rawText.slice(0, MAX_RAW_TEXT_CHARS), CHUNK_SIZE_CHARS);
     const aiClient = createAiClientFromEnv();
-    const { contacts } = await aiClient.generateJson(
-      buildHrListExtractionPrompt({ rawText: rawText.slice(0, MAX_RAW_TEXT_CHARS) }),
-      'HR list extraction'
-    );
 
-    if (!Array.isArray(contacts) || contacts.length === 0) {
-      return res.status(400).json({ error: 'No contacts with an email address were found in the file.' });
+    const allContacts = [];
+    const chunkErrors = [];
+    for (const [index, chunk] of chunks.entries()) {
+      try {
+        const { contacts } = await aiClient.generateJson(
+          buildHrListExtractionPrompt({ rawText: chunk }),
+          `HR list extraction (chunk ${index + 1}/${chunks.length})`
+        );
+        if (Array.isArray(contacts)) allContacts.push(...contacts);
+      } catch (error) {
+        chunkErrors.push(`chunk ${index + 1}/${chunks.length}: ${error.message}`);
+        console.warn(`HR list chunk ${index + 1}/${chunks.length} failed, skipping: ${error.message}`);
+      }
+      if (index < chunks.length - 1) await delay(1500);
     }
 
-    const result = await saveHrContacts(contacts, req.file.originalname);
-    res.json({ ...result, found: contacts.length, truncated });
+    if (allContacts.length === 0) {
+      return res.status(400).json({
+        error: 'No contacts with an email address were found in the file.',
+        chunkErrors: chunkErrors.length ? chunkErrors : undefined
+      });
+    }
+
+    const result = await saveHrContacts(allContacts, req.file.originalname);
+    res.json({
+      ...result,
+      found: allContacts.length,
+      truncated,
+      chunks: chunks.length,
+      chunkFailures: chunkErrors.length
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

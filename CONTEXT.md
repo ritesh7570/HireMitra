@@ -1,6 +1,52 @@
 # Job Application Agent Context
 
-## -4. SESSION 6 SUMMARY (most recent — read this first)
+## -5. SESSION 7 SUMMARY (most recent — read this first)
+
+User uploaded a real large HR list (14493-char prompt, 100+ contacts) and hit two
+compounding failures: a JSON-parse error ("Expected ',' or ']' after array element") and,
+after the Session 6 fallback fix, the *entire* OpenRouter fallback chain also failing
+(429s on some free models, "terminated" connection errors on others).
+
+- **Root cause**: nothing ever set `maxOutputTokens` (Gemini) or `max_tokens`
+  (OpenRouter), so a 100+ entry contact list response got cut off mid-array at whatever
+  small default the provider used. Stacking more fallback models doesn't fix a
+  fundamentally-too-large single request — small free models in particular choke or get
+  killed by the provider on big prompts+outputs ("terminated" is a dropped connection,
+  likely the provider's proxy giving up on a slow/large generation).
+- **Fix #1 — raise the ceiling**: `services/aiClient.js` now sets
+  `maxOutputTokens: 8192` on Gemini and `max_tokens: 8000` on OpenRouter calls. Helps,
+  but doesn't fully solve it for very large lists.
+- **Fix #2 — salvage truncated JSON instead of failing**: `services/json.js` gained
+  `repairTruncatedJson()` — walks the response tracking string/bracket depth, finds the
+  last *fully closed* array element, and returns everything up to there instead of
+  throwing the whole result away. Verified against a synthetic truncated response
+  (correctly recovered 2 of 3 entries) and confirmed zero regression on normal responses,
+  markdown-fenced JSON, and noise-wrapped JSON.
+- **Fix #3 — the real fix — chunk the input before sending to AI**: `routes/hrContacts.js`
+  now splits the extracted raw text into ~4000-char chunks (`chunkText()`, splits on line
+  boundaries only — never mid-line, so one contact's details can't be torn across two
+  chunks) and runs `buildHrListExtractionPrompt` once per chunk sequentially (1.5s delay
+  between chunks), merging all `contacts` arrays before saving. `MAX_RAW_TEXT_CHARS`
+  raised from 20000 to 60000 since chunking makes large input safe to process. One
+  chunk failing (rate limit, truncation, whatever) no longer kills the whole upload —
+  it's logged and skipped, and the response now includes `chunks` (total) and
+  `chunkFailures` (count) so the UI can show e.g. "Found 87 contacts across 24 chunks —
+  added 87, skipped 0 duplicates (2/24 chunks failed and were skipped)."
+  `pages/HrContacts.jsx` updated to surface this.
+- **Verified**: chunking logic tested directly (50 synthetic contact lines -> 6 chunks,
+  zero lines lost, no chunk split mid-line, no chunk exceeds the size cap). `node --check`
+  passed on every server file; `npm run build` (client) succeeded. Did NOT re-test the
+  full live upload flow against a real large PDF in this session (the user's server was
+  left running and not restarted at their request) — next real upload attempt is the
+  actual end-to-end verification of this fix.
+- User declined to have their running server restarted this turn — they'll restart it
+  themselves before retrying the upload. If a future report says "still failing" with
+  this exact same OpenRouter-429/terminated pattern, check whether the server process
+  predates this fix before assuming the fix itself is wrong (this is the third time in
+  this conversation a "fix didn't work" turned out to be a stale process — see Sessions
+  5 and 6 for the same gotcha with `.env` edits).
+
+## -4. SESSION 6 SUMMARY
 
 User added `OPENROUTER_API_KEY` to `server/.env` and reported the HR Contacts upload
 still showing a raw Gemini 429 error in the UI.
