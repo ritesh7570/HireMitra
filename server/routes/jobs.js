@@ -16,4 +16,20 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Delete a single job from scraped_jobs.json by its applyUrl (the natural unique key).
+router.delete('/', async (req, res) => {
+  try {
+    const { applyUrl } = req.body;
+    if (!applyUrl) return res.status(400).json({ error: 'applyUrl is required.' });
+    const raw = await fs.readFile(scrapedJobsPath, 'utf8').catch(() => '[]');
+    const jobs = JSON.parse(raw);
+    const filtered = jobs.filter((j) => j.applyUrl !== applyUrl);
+    if (filtered.length === jobs.length) return res.status(404).json({ error: 'Job not found.' });
+    await fs.writeFile(scrapedJobsPath, JSON.stringify(filtered, null, 2), 'utf8');
+    res.json({ ok: true, remaining: filtered.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

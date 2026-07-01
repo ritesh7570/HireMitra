@@ -5,7 +5,15 @@ export default async function scrapeJobs({ keywords, location, limit = 10 }) {
   const jobs = [];
 
   try {
-    const url = `https://www.linkedin.com/jobs/search/?keywords=${encodeURIComponent(keywords)}&location=${encodeURIComponent(location)}`;
+    // f_TPR=r604800 = past 7 days; sortBy=DD = newest first; f_WT=2 = remote included
+    const params = new URLSearchParams({
+      keywords,
+      location,
+      sortBy: 'DD',
+      f_TPR: 'r604800',
+      f_WT: '2'
+    });
+    const url = `https://www.linkedin.com/jobs/search/?${params.toString()}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await randomDelay();
 

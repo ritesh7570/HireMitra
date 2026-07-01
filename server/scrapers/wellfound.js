@@ -5,7 +5,9 @@ export default async function scrapeJobs({ keywords, location, limit = 20 }) {
   const jobs = [];
 
   try {
-    const url = `https://wellfound.com/jobs?role=${encodeURIComponent(keywords)}`;
+    // remote=true picks up remote-friendly roles; entry level keywords help surface fresher roles
+    const params = new URLSearchParams({ role: keywords, remote: 'true' });
+    const url = `https://wellfound.com/jobs?${params.toString()}`;
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });
     await randomDelay();
 

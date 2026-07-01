@@ -61,7 +61,7 @@ export default function HrContacts() {
           <h1>HR Contacts</h1>
           <p>Grouped by company — up to 20 not-yet-emailed contacts get cold-emailed automatically each day.</p>
         </div>
-        <label className="button">
+        <label className="button upload-button">
           {uploading ? 'Uploading...' : 'Upload PDF/DOCX'}
           <input type="file" accept=".pdf,.docx" onChange={onUpload} disabled={uploading} hidden />
         </label>
@@ -93,13 +93,21 @@ export default function HrContacts() {
             </div>
           </div>
 
-          <input
-            type="text"
-            placeholder="Search by company name..."
-            value={search}
-            onChange={onSearchChange}
-            style={{ maxWidth: '320px' }}
-          />
+          <div className="search-row">
+            <input
+              className="search-input"
+              type="text"
+              placeholder="Search by company name..."
+              value={search}
+              onChange={onSearchChange}
+            />
+            <div className="search-actions">
+              <label className="button button-ghost upload-button-inline">
+                {uploading ? 'Uploading...' : 'Upload'}
+                <input type="file" accept=".pdf,.docx" onChange={onUpload} disabled={uploading} hidden />
+              </label>
+            </div>
+          </div>
 
           <div className="page-stack">
             {data.companies.length === 0 ? (
@@ -108,45 +116,86 @@ export default function HrContacts() {
               </p>
             ) : (
               data.companies.map((group) => (
-                <div key={group._id} className="panel table-wrap">
-                  <h3>{group.company} <span className="muted">({group.hrs.length})</span></h3>
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>Name</th>
-                        <th>Email</th>
-                        <th>Role</th>
-                        <th>LinkedIn</th>
-                        <th>Sent</th>
-                        <th>Sent At</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.hrs.map((hr) => (
-                        <tr key={hr._id}>
-                          <td>{hr.name || '—'}</td>
-                          <td>{hr.email}</td>
-                          <td>{hr.role || '—'}</td>
-                          <td>
+                <div key={group._id} className="panel table-wrap company-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h3>{group.company}</h3>
+                      <p className="muted">{group.hrs.length} contact(s)</p>
+                    </div>
+                    <div className="inline-actions">
+                      <span className="muted">{group.location || ''}</span>
+                    </div>
+                  </div>
+
+                  <div className="desktop-table">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Name</th>
+                          <th>Email</th>
+                          <th>Role</th>
+                          <th>LinkedIn</th>
+                          <th>Sent</th>
+                          <th>Sent At</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {group.hrs.map((hr) => (
+                          <tr key={hr._id}>
+                            <td>{hr.name || '—'}</td>
+                            <td>{hr.email}</td>
+                            <td>{hr.role || '—'}</td>
+                            <td>
+                              {hr.linkedin ? (
+                                <a href={hr.linkedin.startsWith('http') ? hr.linkedin : `https://${hr.linkedin}`} target="_blank" rel="noreferrer">
+                                  Profile
+                                </a>
+                              ) : '—'}
+                            </td>
+                            <td>
+                              <input
+                                type="checkbox"
+                                checked={hr.emailSent}
+                                onChange={() => toggleSent(hr)}
+                                title="Mark as sent/unsent"
+                              />
+                            </td>
+                            <td>{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : '—'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="mobile-cards">
+                    {group.hrs.map((hr) => (
+                      <div key={hr._id} className="hr-card">
+                        <div className="hr-main">
+                          <div>
+                            <strong>{hr.name || '—'}</strong>
+                            <div className="muted small">{hr.role || '—'}</div>
+                          </div>
+                          <div className="hr-actions">
+                            <label className="button button-ghost small">
+                              <input type="checkbox" checked={hr.emailSent} onChange={() => toggleSent(hr)} />
+                              <span style={{ marginLeft: 8 }}>{hr.emailSent ? 'Sent' : 'Mark sent'}</span>
+                            </label>
+                          </div>
+                        </div>
+                        <div className="hr-meta">
+                          <div className="muted">{hr.email}</div>
+                          <div>
                             {hr.linkedin ? (
                               <a href={hr.linkedin.startsWith('http') ? hr.linkedin : `https://${hr.linkedin}`} target="_blank" rel="noreferrer">
-                                Profile
+                                View LinkedIn
                               </a>
                             ) : '—'}
-                          </td>
-                          <td>
-                            <input
-                              type="checkbox"
-                              checked={hr.emailSent}
-                              onChange={() => toggleSent(hr)}
-                              title="Mark as sent/unsent"
-                            />
-                          </td>
-                          <td>{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                          <div className="muted small">{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : 'Not emailed'}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               ))
             )}

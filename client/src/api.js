@@ -14,6 +14,7 @@ export async function api(path, options = {}) {
 export const getStats = () => api('/api/stats');
 export const getApplications = () => api('/api/applications?limit=50');
 export const getJobs = () => api('/api/jobs');
+export const deleteJob = (applyUrl) => api('/api/jobs', { method: 'DELETE', body: JSON.stringify({ applyUrl }) });
 export const runManualApply = (body) => api('/api/apply', { method: 'POST', body: JSON.stringify(body) });
 export const triggerScrape = (body) => api('/api/scrape', { method: 'POST', body: JSON.stringify(body) });
 export const updateStatus = (id, status) =>

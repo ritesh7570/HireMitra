@@ -226,6 +226,33 @@ th { color: var(--muted); font-weight: 600; }
 .badge-red { background: rgba(239, 68, 68, 0.14); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.35); }
 .badge-muted { background: rgba(161, 161, 170, 0.14); color: var(--muted); border: 1px solid var(--line); }
 
+/* HR Contacts specific styles */
+.search-row { display: flex; gap: 12px; align-items: center; margin: 14px 0; flex-wrap: wrap; }
+.search-input {
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(10, 14, 22, 0.6);
+  color: var(--text);
+  min-width: 220px;
+}
+.upload-button { padding: 10px 14px; }
+.upload-button-inline { padding: 8px 12px; }
+
+.company-panel { padding: 18px; border-radius: 16px; }
+.company-panel h3 { margin: 0 0 6px; }
+.desktop-table table { width: 100%; border-collapse: collapse; }
+.desktop-table th, .desktop-table td { padding: 12px; border-bottom: 1px solid rgba(148, 163, 184, 0.06); }
+.desktop-table th { color: var(--muted); font-weight: 700; text-transform: uppercase; font-size: 12px; }
+
+.mobile-cards { display: none; gap: 12px; margin-top: 8px; }
+.hr-card { padding: 12px; border-radius: 12px; background: rgba(12, 16, 24, 0.6); display: grid; gap: 8px; }
+.hr-main { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.hr-meta { display: flex; gap: 12px; flex-direction: column; font-size: 13px; }
+.hr-actions .small { padding: 6px 10px; font-size: 13px; }
+.small { font-size: 13px; }
+
+
 .status-cell { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .empty-state { padding: 24px; text-align: center; color: var(--muted); }
 .spinner-row { display: flex; align-items: center; gap: 10px; color: var(--muted); padding: 8px 0; }
@@ -258,4 +285,7 @@ th { color: var(--muted); font-weight: 600; }
   .stats-grid, .two-column, .settings-grid, .form-grid, .chart-grid { grid-template-columns: 1fr; }
   .page-header { flex-direction: column; }
   .chart-grid { gap: 16px; }
+  .desktop-table { display: none; }
+  .mobile-cards { display: grid; }
+  .search-input { min-width: 100%; }
 }
