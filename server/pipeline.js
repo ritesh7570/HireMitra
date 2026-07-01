@@ -7,6 +7,7 @@ import { createQueue, createConnection, queueName } from './workers/queue.js';
 import { processJob } from './workers/processor.js';
 import { scrapeAll } from './scrapers/index.js';
 import { disconnectApplicationStore } from './services/applicationStore.js';
+import { ScrapeRun } from './services/scrapeReporter.js';
 
 const serverDir = path.dirname(fileURLToPath(import.meta.url));
 const scrapedJobsPath = path.join(serverDir, 'data', 'scraped_jobs.json');
@@ -30,13 +31,15 @@ async function loadJobs({ fresh }) {
   const keywords = process.env.SCRAPE_KEYWORDS || 'backend developer node.js';
   const location = process.env.SCRAPE_LOCATION || 'India';
   const limit = Number(process.env.SCRAPE_LIMIT) || 10;
-  const { jobs, counts } = await scrapeAll(keywords, location, limit);
+  const run = new ScrapeRun();
+  const { jobs, counts } = await scrapeAll({ keywords, location, limit, reporter: run });
   await fs.mkdir(path.dirname(scrapedJobsPath), { recursive: true });
   await fs.writeFile(scrapedJobsPath, JSON.stringify(jobs, null, 2), 'utf8');
   console.log(
-    `Scraped ${counts.naukri || 0} jobs from Naukri, ${counts.wellfound || 0} from Wellfound, ` +
+    `Scraped ${counts.naukri || 0} from Naukri, ${counts.wellfound || 0} from Wellfound, ` +
       `${counts.linkedin || 0} from LinkedIn, ${counts.indeed || 0} from Indeed, ` +
-      `${counts.internshala || 0} from Internshala, ${counts.companyPages || 0} from company pages`
+      `${counts.internshala || 0} from Internshala, ${counts.companyPages || 0} from company pages, ` +
+      `${counts.companyWatchlist || 0} from watchlist`
   );
   return jobs;
 }
@@ -104,7 +107,9 @@ async function main() {
   const resultsPromise = waitForQueue(worker, jobs.length);
 
   for (const [index, job] of jobs.entries()) {
+    const priority = job.source === 'companyWatchlist' ? 1 : 10;
     await queue.add(`job-${index + 1}`, job, {
+      priority,
       removeOnComplete: true,
       removeOnFail: true
     });

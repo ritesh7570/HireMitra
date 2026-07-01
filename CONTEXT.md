@@ -1,6 +1,448 @@
 # Job Application Agent Context
 
-## -5. SESSION 7 SUMMARY (most recent — read this first)
+## ⚠️ INCIDENT — starting the server can trigger a real 20-email send
+
+**If you (or a future AI session) need to start `node index.js` for any reason — even
+just to test an unrelated read-only route — be aware: `server/index.js` unconditionally
+calls `runDailyHrBatch()` on every startup (Session 8's design). If today's automatic
+batch hasn't run yet, starting the server immediately sends real cold emails to up to 20
+real HR contacts, with no confirmation prompt.** This bit during Session 10/Step 4: the
+server was started solely to verify a new `GET /api/scrape/runs` route, and because the
+calendar day had rolled over with no batch run yet, it silently fired the real daily
+send — 20 real emails went out before anyone noticed. Letting it finish was the safer
+choice once discovered (killing it mid-run would have skipped persisting `lastRunDate`,
+risking an even bigger duplicate send on the next restart). Full details in the Session
+10 entry below. **Lesson for next time: before starting `node index.js` for any reason,
+check `server/data/hr_batch_state.json`'s `lastRunDate` first** — if it's not today, the
+startup is going to send real email, full stop, regardless of why you're starting it.
+
+## -8. SESSION 10 SUMMARY (most recent — read this first) — PHASE 3 IN PROGRESS
+
+Started `PHASE3_CLAUDE_PROMPT.md` (credential vault, per-platform applicators, company
+watchlist, scrape visibility). Following its explicit build order one step at a time,
+verifying each before proceeding, per its own instructions ("do not skip ahead, do not
+batch multiple steps").
+
+**Step 1 — fixed the enqueue bug (done, verified):**
+- `server/routes/scrape.js` now imports `createQueue` from `workers/queue.js` (one
+  instance at module scope, not per-request) and, after writing `scraped_jobs.json`,
+  enqueues every scraped job (`queue.add(..., {removeOnComplete: true, removeOnFail:
+  true})`, mirroring `pipeline.js`'s pattern). Previously this route only wrote the file
+  and never touched the queue — the dashboard's "Run full pipeline now" button did
+  nothing beyond scraping.
+- Verified without risking a real cold email: used a disposable BullMQ queue name (not
+  the real `job-application-pipeline`) to prove `createConnection()` + `Queue.add()` +
+  `getJobCounts()` work correctly against Redis, plus a read-only peek at the real
+  queue's (idle) state. Did not trigger a live scrape through the running server's actual
+  worker for this step.
+
+**Step 2 — scrape reporter + per-run logs (done, verified):**
+- `server/services/scrapeReporter.js` — new `ScrapeRun` class (extends `EventEmitter`):
+  `sourceStarted/sourceProgress/sourceDone/sourceFailed/sourceSkipped(...)` methods, plus
+  `finish({totalJobs, deduplicated})` which writes `data/scrape_runs/run_<id>.json`
+  (gitignored) in the exact shape the spec defined. Also exports `listScrapeRuns(limit)`.
+- `scrapers/index.js`'s `scrapeAll()` now accepts an optional `reporter` in its options
+  object — times each source's start/success/failure and reports it. Fully
+  backward-compatible (reporter is optional, guarded by `?.`).
+- Wired into both real call sites: `routes/scrape.js` and `pipeline.js` each create a
+  `new ScrapeRun()` and pass it through.
+- Verified live with a real (queue-free, so zero side-effect risk) scrape call: events
+  fired in order, the written JSON matched the spec's format exactly, `listScrapeRuns()`
+  read it back correctly. Test run log deleted afterward.
+
+**Step 3 — SSE live progress endpoint (done, verified):**
+- `scrapeReporter.js` gained an exported `scrapeHub` (`EventEmitter` singleton) — every
+  `ScrapeRun` instance broadcasts its events onto this shared hub (via a new internal
+  `_broadcast()` helper that emits on both `this` and `scrapeHub`, tagging the payload
+  with `runId`). This means an SSE client that connects *before* a scrape starts still
+  sees that run's events once it begins — it doesn't need to know about a specific run
+  instance, just the hub.
+- `routes/scrape.js` — new `GET /status/stream` (SSE). **Registered before** `GET
+  /status/:jobId` — same path depth, so if registered after, Express would have matched
+  `/status/stream` as that route with `jobId="stream"` instead of reaching this one.
+  Subscribes to all 6 event types on `scrapeHub`, writes proper `event:`/`data:` SSE
+  frames, sends a `: heartbeat` comment every 20s (keeps proxies from timing out an idle
+  connection), and cleans up its listeners on `req.on('close')`.
+- **Verified live end-to-end with `curl -N`**, exactly as the spec asked: temporarily
+  stopped Redis (so no worker would be active to actually process anything — confirmed
+  via the existing startup probe gracefully no-op'ing), started a fresh server, opened
+  the SSE stream, then POSTed a real scrape (`keywords=backend developer, limit=3`, all
+  6 sources since the route doesn't accept a `sources` filter yet). Watched real-time
+  `source-started` for all 6 sources, `source-done` as each finished (with real counts:
+  internshala 3, indeed 1, linkedin 3, naukri/wellfound/companyPages 0), a heartbeat
+  in between, and a final `run-complete` with the full summary (7 total, 7 deduplicated).
+  Confirmed the route's later enqueue step failed cleanly (Redis down) without crashing
+  anything (`GET /status/:jobId` correctly reported `status: "failed"`,
+  `error: "connect ECONNREFUSED..."`). Restored Redis and restarted the server normally
+  afterward; test run log files deleted.
+- **Minor noise found, not yet fixed**: `routes/scrape.js`'s module-level `queue =
+  createQueue()` doesn't do the same "probe Redis once before creating anything" dance
+  `workers/jobWorker.js` does — when Redis is down at server startup, this produces a
+  handful of bounded (stops after 3 retries) but slightly noisy connection-error log
+  lines. Not blocking, just worth applying the same fix pattern here later if it bothers
+  anyone.
+
+**Step 4 — ScrapeStatus.jsx React page (done, verified):**
+- `routes/scrape.js` gained `GET /runs?limit=` (default 10, max 50) — thin wrapper over
+  `listScrapeRuns()`. Needed for the page's history section, not explicitly named as a
+  route in the spec but implied by "history section below: last 10 runs."
+- `components/StatusBadge.jsx` — added `running` (blue) and `success` (green) to its
+  color map, reusing the existing badge component instead of building a separate one
+  for scrape-source statuses.
+- `components/ScrapeRunCard.jsx` — one card per source: name, status badge, a simple
+  width-based progress bar (0%/50%/100% for waiting/running/done — not a real percentage,
+  just a visual state indicator), and a status line (jobs found + duration, or the error).
+- `pages/ScrapeStatus.jsx` — "Start new scrape" form (keywords/location/limit, all
+  optional) at top, a live grid of `ScrapeRunCard`s (one per known source, starts in
+  "waiting" state) wired to a native `EventSource('/api/scrape/status/stream')` — uses
+  `addEventListener` per named event type (`source-started`/`source-done`/
+  `source-error`/`source-skipped`/`run-complete`), exactly per the spec's "vanilla
+  EventSource, no extra library" instruction. `run-complete` triggers a re-fetch of run
+  history. History section below uses `<details>/<summary>` per run (no extra state
+  needed) showing a per-source breakdown table.
+- `api.js` gained `getScrapeRuns(limit)`. Added to `App.jsx` routing and `Sidebar.jsx`
+  nav as "Scrape Status" / `/scrape-status`.
+- **Verified**: `npm run build` (client) succeeded. Server-side: confirmed
+  `GET /api/scrape/runs` responds correctly (`{"runs":[]}` when none exist — matches the
+  page's empty-state handling) against a live server.
+
+**⚠️ Real-world incident during this step's verification — see the top-of-file warning.**
+Starting `node index.js` solely to test the new `/runs` route triggered Session 8's
+unconditional startup call to `runDailyHrBatch()`. The calendar day had rolled over
+(2026-06-29 -> 2026-06-30) with no batch run yet today, so it fired for real: **20 actual
+cold emails sent to 20 real HR contacts** (Adroitech Engg, Airwood, Aithent Technologies,
+Alcatel/NOKIA, Alliance Group, Amara Raja Group, Amazon, Ameex Technologies, American
+Megatrends, Apollo Tyres, Aricent Technologies, ASG Technologies, Aspire Systems, Athena
+Health, Axis Bank, Barry Wehmiller, Berger Paints, Bhansali Engineering Polymers, Black
+Bird Solutions, BNP Paribas), using the real uploaded resume
+(`Ritesh_Kumar_Resume_Backend (1).pdf`), all 20/20 sent successfully, 0 failed. Once
+noticed mid-run, the decision was to let it finish rather than kill it — killing it
+would have skipped writing `lastRunDate`, which would have made the *next* server start
+fire another full batch on top of this one (worse). `hr_batch_state.json` now correctly
+shows `lastRunDate: "2026-06-30"`, so it will not fire again today. `hr-contacts/status`
+confirms: `total: 123, sentCount: 25, sentToday: 20, remaining: 98`. This was within the
+system's normal designed behavior (20/day automatic), just triggered earlier/differently
+than the user would have expected from an unrelated server start — not a bug in the
+batch logic itself, but a real gap in situational awareness before running `node
+index.js` casually. User was informed immediately and transparently.
+
+**Follow-up confirmed safe**: before Step 5, the user asked to verify the daily-batch
+guard wouldn't fire repeatedly on same-day restarts. Re-read the code (the `state.
+lastRunDate === today` check at the top of `runDailyHrBatch()` returns early before
+touching any contact), then proved it live: restarted the server once more — log showed
+only `"already ran today, skipping"`, `hr-contacts/status` confirmed `sentCount`
+unchanged at 25 (no new sends). Noted the actual machine clock (what the code uses) can
+differ from the conversation's stated "current date" context value — always check the
+real clock (`node -e "console.log(new Date().toISOString())"`) and `hr_batch_state.json`
+together before starting the server, not just one or the other.
+
+**Step 5 — Credential vault (done, verified):**
+- `server/services/credentialStore.js` — new. `server/data/credentials.json`
+  (gitignored), seeded with `{ indeed: {email:'', enabled:false}, naukri: {email:'',
+  enabled:false} }` on first read. `getCredentials/setCredentials/deleteCredentials/
+  listPlatforms()`. Every entry defaults `enabled: false` — the hard safety gate from the
+  spec; nothing can attempt a login without the user explicitly flipping this from the
+  Credentials page.
+  - **Encryption**: AES-256-GCM via `CREDENTIAL_VAULT_KEY` (32-byte hex, new `.env.example`
+    entry with the generation command inline). If missing or malformed (wrong byte
+    length), falls back to plain-text storage with a loud one-time console warning —
+    exactly the documented trade-off from the spec (file is gitignored either way).
+    `setCredentials` preserves the existing password/encryption fields when a caller
+    updates only `email`/`enabled` without resending a password.
+  - **Verified directly** (no server needed): plain-text round-trip when no key set,
+    encrypted round-trip with a freshly generated real key (confirmed the on-disk
+    `password` field is hex ciphertext, not plaintext, and `encrypted: true`), and the
+    malformed-key fallback path (warns, still works, stores plain). All three paths
+    correct.
+- `server/services/sessionManager.js` — new. `getSession/saveSession/isSessionFresh`
+  (cookies in `data/sessions/<platform>.json`, gitignored, default `maxAgeDays: 7`).
+  `canAttemptLogin/loginAndSave` — login throttling (`MIN_HOURS_BETWEEN_LOGINS`, new env
+  var, default 6) tracked in a separate `data/sessions/<platform>.throttle.json`,
+  checked on *every* login attempt (not just successes) so a string of failures can't be
+  retried rapidly — matches the spec's anti-detection hygiene requirement exactly.
+  `ensureSession()` implements the 3-step flow from spec section 5c (fresh session ->
+  reuse; enabled creds -> login+save; neither -> clear error) — ready for steps 6-7 to
+  call once real `login()` functions exist per platform.
+- `server/routes/credentials.js` — `GET /` (list, password never included — only
+  `hasPassword`/`encrypted` booleans), `PUT /:platform`, `DELETE /:platform`,
+  `POST /:platform/test-login`. The test-login route dynamically imports
+  `../applicators/<platform>.js` and checks for an exported `login()` — since
+  Indeed/Naukri applicators don't exist yet (steps 6-7), it currently always returns a
+  clean `501` rather than pretending to attempt anything. Routes through
+  `sessionManager.loginAndSave()` so throttling applies to test-login too, not just real
+  apply-time logins. Uses a **headed** (not headless) browser per the spec, so the user
+  can visually confirm + handle any captcha themselves once a real login exists.
+- `scrapers/utils.js`'s `createBrowserPage()` gained an optional `{ headless = true }`
+  param (backward-compatible — every existing call site uses the no-arg form and is
+  unaffected) so the credentials route could request a headed browser without a separate
+  helper.
+- `client/pages/Credentials.jsx` — one panel per platform (Indeed, Naukri): email/password
+  inputs, "Enabled" checkbox (defaults off), Save/Clear/Test login buttons, a session
+  status badge ("Session fresh (Nd ago)" / "No session" / "Session expired"). The exact
+  warning banner from the spec at the top. `api.js` gained
+  `getCredentials/setCredentials/deleteCredentials/testLogin`. Added to `App.jsx` routing
+  and `Sidebar.jsx` nav as "Credentials" / `/credentials`.
+- **Verified live** (confirmed `lastRunDate` matched today first, so the restart was
+  safe — see above): `GET /api/credentials` lists both platforms correctly; `PUT` saves
+  and the follow-up `GET` confirms the password never leaks back (`hasPassword: true`,
+  no `password` field); `POST /:platform/test-login` correctly 501s since no applicator
+  exists yet; `DELETE` removes the entry and a subsequent `GET` re-seeds the default.
+  Test credentials cleared from `data/credentials.json` afterward. `npm run build`
+  (client) succeeded; all server files `node --check` clean.
+
+**Step 6 — Indeed applicator with DRY_RUN (built, partially verified — see limitation below):**
+- `applicators/captchaGuard.js` — new, shared by Indeed now and Naukri later.
+  `isCaptchaPresent(page)` checks the URL and a handful of common captcha selectors
+  (`.g-recaptcha`, `iframe[src*="captcha"]`, etc). `handleCaptcha(page, platform)`
+  screenshots to `data/captcha_<platform>_<timestamp>.png` (gitignored), emails
+  `NOTIFICATION_EMAIL` with the screenshot attached via `sendHtmlEmail`, and returns
+  `{status: "captcha_blocked"}` for the applicator to return directly — never attempts
+  to solve anything, per the non-negotiable rule.
+- `applicators/indeed.js` — new. `login(page, {email, password})` (throws on captcha or
+  missing fields, returns cookies on success) and `apply(page, job, resumePath)`
+  (Easy Apply: click in, upload resume, fill an AI-generated cover letter if a cover
+  letter field exists, best-effort AI-answer up to 8 visible question fields, advance
+  through up to 6 "Continue"/"Next" steps, then either stop — `INDEED_DRY_RUN=true`,
+  the default — or click final submit). Captcha-checked at every step transition, not
+  just once at the start.
+- `applicators/index.js` — `isWhitelisted()` now also checks `indeed` against
+  `apply_whitelist.json` (the key already existed in the file from Phase 2, just unused
+  until now — still `false` by default). New `applyIndeedWithSession()` owns the
+  browser/page lifecycle for Indeed specifically (unlike Internshala/generic, which are
+  stateless per job) — gets credentials via `credentialStore`, calls
+  `sessionManager.ensureSession()` (reuses a fresh cookie session or logs in fresh,
+  throttled), applies the cookies to the page context, then calls `indeed.apply()`.
+- `services/applicationStore.js` — added `captcha_blocked` to the `Application` schema's
+  status enum.
+- `workers/processor.js` — fixed a real bug this surfaced: it was collapsing every
+  applicator result down to just `auto_applied`/`needs_manual` based on the `applied`
+  boolean, which would have silently mislabeled a captcha-blocked job as `needs_manual`
+  with no indication a captcha was ever involved. Now checks
+  `applyResult.status === 'captcha_blocked'` first and preserves it.
+- **What was verified** (all without touching real Indeed, since no real credentials are
+  configured and the whitelist is `false` by default): `node --check` on every new/changed
+  file; confirmed `isWhitelisted({source:'indeed', ...})` returns `false` and
+  `autoApply()` short-circuits to `not_whitelisted` *without ever launching a browser* —
+  i.e. this entire feature is a complete no-op in the current default config, even though
+  the code now fully exists; confirmed `INDEED_DRY_RUN`'s default-true / explicit-false
+  logic directly; confirmed `isCaptchaPresent()`'s URL- and selector-matching logic
+  against mocked `page` objects (no real browser needed for this part).
+- **What was explicitly NOT verified, and cannot be by an AI session**: the spec's Step 6
+  instruction is "run headed Playwright manually, watch it open Indeed, navigate to a
+  job, fill the form, NOT submit — confirm 5-10 times before marking trustworthy." That
+  requires a human watching a browser window in real time, especially to judge Indeed's
+  actual current selectors/flow (which this code's selectors are a best-effort guess at,
+  not confirmed against the live site) and to handle any captcha Indeed throws up. **This
+  applicator should not be trusted, and `apply_whitelist.json`'s `indeed` flag should stay
+  `false`, until the user has actually watched it run** (set `INDEED_DRY_RUN=true` (already
+  default), configure real credentials via the Credentials page, temporarily flip
+  `indeed: true` in the whitelist for a controlled single-job test, and watch).
+
+**Step 7 — Naukri applicator with DRY_RUN (built, partially verified — same human-verification limitation as Step 6):**
+- `applicators/naukri.js` — new. `login(page, {email, password})` mirrors Indeed's
+  structure (captcha-checked at every step, throws on failure, returns cookies on
+  success) against `naukri.com/nlogin/login`'s expected field selectors.
+  `apply(page, job, resumePath)` is structurally simpler than Indeed's multi-step Easy
+  Apply, per the spec: click "I am Interested"/"Apply", detect an external-ATS redirect
+  and stop (`needs_manual`, doesn't guess at an unknown third-party form), otherwise
+  upload the resume + best-effort AI-answer visible questions, then submit if a further
+  form exists or treat the original click as the whole application if not.
+- **Caught and fixed a real safety bug in my own first draft before it ever ran**: Naukri's
+  "I am Interested" button is frequently the *entire* application by itself (the spec
+  says this explicitly) — but my first draft clicked it unconditionally and only gated a
+  later "Submit" button that, on many jobs, doesn't even exist. That meant DRY_RUN would
+  have performed a real, irreversible apply action while claiming to be a dry run. Fixed
+  by moving the dry-run check to *before* the interested-button click — in dry-run mode,
+  `apply()` now confirms the button exists and returns immediately, without clicking
+  anything at all. Caught this myself during code review, before any execution — not
+  found via testing.
+- `applicators/index.js` — generalized the Indeed-specific `applyIndeedWithSession()`
+  from Step 6 into a shared `applyWithSession(platform, job, opts)` keyed off a new
+  `SESSION_APPLICATORS = { indeed, naukri }` map, rather than duplicating the
+  browser/session-lifecycle wrapper a second time. `isWhitelisted()` now checks
+  `naukri` the same way as `indeed` (the JSON key already existed, unused, since Phase 2
+  — still `false` by default).
+- **What was verified**: `node --check` on every changed file; confirmed
+  `isWhitelisted({source:'naukri',...})` returns `false` and `autoApply()`
+  short-circuits without launching a browser (same no-op-by-default proof as Indeed);
+  and — the important one — **directly tested the dry-run fix with a mocked Playwright
+  page**: confirmed `NAUKRI_DRY_RUN=true` results in zero `click()` calls before
+  returning `status: "dry_run"`, and confirmed `NAUKRI_DRY_RUN=false` against the same
+  mock actually proceeds to click (so the gate is a real branch, not just always-false).
+  `npm run build` (client, unchanged this step) still succeeds.
+- **Same limitation as Step 6, not re-explained in full here**: no AI session can watch a
+  headed browser run against the real Naukri site. Selectors are best-effort, unconfirmed
+  against the live site. `apply_whitelist.json`'s `naukri` flag should stay `false` until
+  the user has watched it run for real, same process as Indeed.
+
+**Step 8 — Company watchlist (done):**
+- `server/data/target_companies.json` — JSON array of watchlist entries, each with `id`,
+  `name`, `careersUrl`, `selector` (optional CSS selector, blank = AI extraction),
+  `priority` (1 = every run, 2 = every 12h, 3 = weekly), `lastScrapedAt`, `tags`. Seeded
+  with a Razorpay example entry. `lastScrapedAt` is updated after each successful scrape
+  so priority filtering works correctly across runs.
+- `server/scrapers/companyWatchlist.js` — scraper that reads `target_companies.json`,
+  filters companies whose `lastScrapedAt` is old enough for their priority level, opens
+  each careers page with Playwright (headless), and extracts jobs either via the given CSS
+  selector (up to 30 cards, skips non-job-title text) or, if no selector, by dumping all
+  job-looking `<a>` links to Gemini for structured extraction (`title, location, applyUrl`).
+  Updates `lastScrapedAt` per company after a successful scrape. Returns jobs in the same
+  `{title, company, location, jdText, applyUrl, recruiterEmail, source: 'companyWatchlist',
+  scrapedAt}` shape as all other scrapers — zero changes needed to the dedup logic.
+- `server/routes/companies.js` — full CRUD (`GET /`, `POST /`, `PUT /:id`,
+  `DELETE /:id`) plus `POST /:id/test-scrape` which runs the scraper for just one company
+  and returns a preview of found jobs without enqueueing anything. Mounted at
+  `/api/companies` in `server/index.js`.
+- `server/scrapers/index.js` — `companyWatchlist` added to `allScrapers` and
+  `enabledSources`. The watchlist scraper now runs in parallel with every other source
+  on every `scrapeAll()` call (priority filtering inside `companyWatchlist.js` ensures it's
+  a fast no-op for P2/P3 companies that were recently scraped).
+- `client/src/pages/Companies.jsx` — table view: company name, careers URL, selector
+  (shows "AI" when blank), priority badge, last-scraped age, tags, actions column.
+  Inline add/edit form (name, URL, selector, priority dropdown, tags). "Test Scrape"
+  button fires `POST /api/companies/:id/test-scrape` and shows a preview panel below the
+  table with the found jobs (title/location/applyUrl). Wired into `App.jsx` routing
+  (`/companies`) and `Sidebar.jsx` nav.
+- **Verified**: `node --eval` syntax check on both new server files passed clean; client
+  `npm run build` succeeded.
+
+**Step 9 — Watchlist priority in BullMQ pipeline (done):**
+- `server/routes/scrape.js` and `server/pipeline.js` — both now pass `priority: 1` to
+  `queue.add()` for jobs with `source === 'companyWatchlist'`, and `priority: 10` for all
+  other sources. In BullMQ, lower number = higher priority, so watchlist jobs are always
+  processed before the general-scrape batch, regardless of arrival order.
+- `server/applicators/index.js` — `isWhitelisted()` now treats `companyWatchlist` the same
+  as `companyPages`: if the job's company name matches an entry in `apply_whitelist.json`'s
+  `companyPages` array (case-insensitive), it's whitelisted for the generic applicator.
+  `autoApply()` dispatches `companyWatchlist` jobs to `applyGeneric()` on the same
+  condition. This means: add a company to both `target_companies.json` AND the
+  `companyPages` array in `apply_whitelist.json` to get prioritized scraping + auto-apply.
+- `pipeline.js` log line updated to include the `companyWatchlist` count.
+- **Verified**: background syntax check exited 0.
+
+**Step 10 — CONTEXT.md + AUTO_APPLY_LOGIC.md update (this entry).**
+
+**Not started yet**: Step 11 (final end-to-end dry-run verification). Waiting for user
+confirmation before proceeding.
+
+## -7. SESSION 9 SUMMARY (most recent — read this first) — HR CONTACTS STORAGE: COMPLETE
+
+User asked to restructure HR contact storage from a flat per-contact collection into a
+"map-like" structure keyed by company (alphabetical), with multiple HRs nesting under
+their shared company, plus a company-name search on the HR Contacts page. This section
+is now considered **complete** — next up per the user's plan is the auto-apply feature.
+
+- **New schema** (`services/hrContactStore.js`, fully rewritten): one Mongoose model,
+  `HrCompany` (collection `hrcompanies`):
+  ```
+  { companyKey: <normalized lowercase, unique>, company: <display name>,
+    hrs: [{ name, email, role, linkedin, sourceFile, emailSent, emailedAt, createdAt }] }
+  ```
+  `companyKey` is the literal "map key" (unique index); `hrs` is the value array. A new
+  HR for an already-known company pushes into that company's existing `hrs` array
+  instead of creating a new top-level document — exactly the "if we get another HR from
+  that company, store it with the others" behavior asked for.
+- **One-time migration built in**: `migrateFromFlatCollectionIfNeeded()` runs lazily
+  inside `getHrCompanyModel()` (checked once per process via a module-level flag, and
+  again implicitly via `HrCompany.countDocuments() > 0` across restarts) — reads the old
+  flat `hrcontacts` collection, groups by normalized company name, and `insertMany`s into
+  `hrcompanies`. Old collection is left untouched (read-only) and not dropped — kept as a
+  backup per the user's choice. **Ran for real** against the actual production data:
+  123 flat contacts → 118 company groups (5 companies had 2 HRs each, correctly merged:
+  Ameex Technologies, Dominair Systems, Ecare India, Gemini Cooling Systems, Muthoot
+  Finance). All 5 previously-sent contacts (from Session 8's test batch) kept their
+  `emailSent`/`emailedAt` correctly through the migration — verified via
+  `getHrContactStats()` showing `sentCount: 5` unchanged after migration.
+- **Store functions rewritten around the grouped shape**:
+  - `saveHrContacts()` — same input shape as before (`{name, company, email, role,
+    linkedin}[]`), now upserts into the right company group, dedupes by email *within*
+    that company rather than globally.
+  - `listHrContacts({ page, limit, search })` — new `search` param does a case-insensitive
+    regex match on `company`, sorted alphabetically by `companyKey`. Verified live:
+    searching "tech" correctly matched 19 companies (Aithent Technologies, HCL
+    Technologies, Infosys Technologies, etc.); searching "muthoot" correctly returned the
+    one 2-HR group.
+  - `getUnsentHrContacts(limit)` — now an aggregation pipeline (`$unwind` + `$match` +
+    `$sort` + `$limit` + `$project`) flattening unsent HRs across all companies,
+    oldest-`createdAt`-first, returning flat `{_id, company, name, email, role,
+    linkedin}` objects — same shape `hrBatchSender.js` already expected, so **no changes
+    needed there**.
+  - `setHrContactSent(hrId, sent)` — now `findOneAndUpdate({'hrs._id': hrId}, {$set:
+    {'hrs.$.emailSent':..., 'hrs.$.emailedAt':...}})`. Verified live via a real PATCH
+    against a real subdocument (toggled true then back to false).
+  - `getHrContactStats()` — aggregation across all companies for total/sentCount/
+    sentToday/remaining (same return shape as before, so `routes/hrContacts.js`'s
+    `/status` endpoint and `TodayPlan.jsx` needed no changes).
+- **`routes/hrContacts.js`**: `GET /` now accepts `?search=`, and merges `listHrContacts`
+  + `getHrContactStats` into one response (`{ companies, totalCompanies, page, limit,
+  total, sentCount, sentToday, remaining }`). Everything else (`/upload`, `/status`,
+  `/send-batch`, `PATCH /:id`) needed zero changes since they call the same exported
+  function names with the same signatures.
+- **Client**: `pages/HrContacts.jsx` rewritten to render one panel per company (header
+  shows company name + HR count), each with its own small table of HRs (name/email/role/
+  LinkedIn link if present/sent checkbox/sent-at), plus a search-by-company text input
+  that re-fetches on change. `api.js`'s `getHrContacts(page, search)` now takes a search
+  param.
+- **Future scraper note**: nothing scrapes HR contacts yet (out of scope for this
+  session, per the user's "then mark this section complete then we will auto apply
+  feature" plan) — but `saveHrContacts(contacts, sourceFile)` is the single, already-
+  generic entry point any future scraper should call with the same `{name, company,
+  email, role, linkedin}` shape; it'll group into the same company structure
+  automatically. No new code needed there until the scraper itself is built.
+- **Verified live end-to-end**: started a fresh server, hit the real `/api/hr-contacts`
+  route directly (not just the store functions in isolation) and got back the correct
+  grouped/searched/stat'd response against the real, now-migrated 123-contact dataset.
+  `node --check` passed on every server file; `npm run build` (client) succeeded.
+
+## -6. SESSION 8 SUMMARY
+
+User wanted a real but small (5-contact) test send to validate the whole HR-batch
+pipeline end-to-end, using their actual resume file (not an AI-tailored one), plus a
+Dashboard widget showing today's HR-batch status. This was a real send to real people —
+confirmed with the user before triggering it.
+
+- **Literal uploaded resume support**:
+  - `services/profileStore.js` — `profile.json` now also stores `uploadedResumePath` /
+    `uploadedResumeFilename`. New `getUploadedResumePath()` getter.
+  - `routes/profile.js`'s `POST /resume` now saves the literal uploaded buffer to
+    `server/data/uploaded_resume.<ext>` (gitignored) in addition to the existing
+    AI-merge-into-profile-text step, and records the path/filename via
+    `updateCandidateProfile()`.
+  - `services/hrBatchSender.js` now checks `getUploadedResumePath()` first — if a literal
+    file is on record, it's attached as-is (correct extension); only falls back to the
+    AI-tailored generic resume (the old behavior) if nothing's been uploaded yet.
+- **On-demand/manual batch send** (separate from the automatic daily 20/day):
+  - `services/hrBatchSender.js`'s `runDailyHrBatch()` gained a `force` option that
+    bypasses the "already ran today" lock without disturbing the automatic schedule —
+    it still writes `lastRunDate` at the end, so the same day's automatic check (hourly
+    or on next startup) stays a no-op afterward. New `getBatchState()` export.
+  - `services/hrContactStore.js` gained `getHrContactStats()` (total / all-time sent /
+    sent-today / remaining).
+  - `routes/hrContacts.js` gained `GET /status` (stats + `lastRunDate`) and
+    `POST /send-batch` (`{ count }`, defaults 5, clamped 1-100, calls
+    `runDailyHrBatch({ batchSize: count, force: true })`).
+- **Dashboard widget**: new `components/TodayPlan.jsx` — shows HR contact totals/sent
+  today/remaining, a count input (default 5), and a "Send to next N HR contact(s)"
+  button. Added to `Dashboard.jsx` between the email chart and recent activity.
+  `api.js` gained `getHrBatchStatus()` / `sendHrBatch(count)`.
+- **Real send executed this session**: user pointed at a specific pre-existing file,
+  `server/Ritesh_Kumar_Resume_Backend (1).pdf` (their previous resume upload predated the
+  literal-file-saving feature, so nothing was on disk yet — rather than re-uploading via
+  Settings, they directed me straight at this file). Set it as `uploadedResumePath` via a
+  one-off `updateCandidateProfile()` call (non-destructive — only touched the resume
+  fields, left `profileText`/`contact` untouched). Restarted the server (confirmed with
+  user first) to load the new code, then called `POST /api/hr-contacts/send-batch
+  {"count":5}` directly. **Result: 5/5 sent successfully**, confirmed via server log that
+  the literal PDF was used (not AI-tailored), confirmed via `GET /status` that
+  `sentToday: 5`, `lastRunDate` set to today so the automatic batch won't double-send.
+  The 5 recipients: 42 Hertz Software India, 7Eleven Arthashastra India, Ababil
+  Healthcare, ABS Aircon Engineers, Aditya Birla Group (oldest-added-first, as designed).
+- Total HR contacts on file: 123 (from the earlier real upload), 118 remaining unsent
+  after this test. Tomorrow's automatic run reverts to the default batch size of 20 —
+  no permanent config change was made, exactly as the user asked ("rest will remain
+  the same").
+
+## -5. SESSION 7 SUMMARY
 
 User uploaded a real large HR list (14493-char prompt, 100+ contacts) and hit two
 compounding failures: a JSON-parse error ("Expected ',' or ']' after array element") and,

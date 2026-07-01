@@ -1,0 +1,14 @@
+[
+  {
+    "id": "razorpay",
+    "name": "Razorpay",
+    "careersUrl": "https://razorpay.com/jobs/",
+    "selector": "",
+    "priority": 1,
+    "lastScrapedAt": "2026-07-01T11:59:55.105Z",
+    "tags": [
+      "fintech",
+      "remote-friendly"
+    ]
+  }
+]

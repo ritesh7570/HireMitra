@@ -69,7 +69,16 @@ export async function processJob(job) {
         profile: getCandidateProfile(),
         tailoredResumePath: result.tailoredResumePath
       });
-      finalStatus = applyResult.applied ? 'auto_applied' : 'needs_manual';
+      // Preserve specific statuses (captcha_blocked, dry_run) where the schema supports
+      // them; otherwise fall back to the simple applied/needs_manual split. "dry_run"
+      // itself isn't a DB status — it intentionally maps to needs_manual, since a
+      // dry-run fill is exactly that: needs a human to actually submit it.
+      finalStatus =
+        applyResult.status === 'captcha_blocked'
+          ? 'captcha_blocked'
+          : applyResult.applied
+            ? 'auto_applied'
+            : 'needs_manual';
     } catch (error) {
       console.warn(`Auto-apply failed for ${result.company}/${result.role}: ${error.message}`);
       finalStatus = 'needs_manual';

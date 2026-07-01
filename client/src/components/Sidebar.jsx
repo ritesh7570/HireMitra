@@ -6,6 +6,9 @@ const links = [
   ['/applications', 'Applications'],
   ['/manual-apply', 'Manual Apply'],
   ['/hr-contacts', 'HR Contacts'],
+  ['/scrape-status', 'Scrape Status'],
+  ['/credentials', 'Credentials'],
+  ['/companies', 'Companies'],
   ['/settings', 'Settings']
 ];
 

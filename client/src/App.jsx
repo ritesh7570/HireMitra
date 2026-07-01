@@ -5,6 +5,9 @@ import Jobs from './pages/Jobs.jsx';
 import Applications from './pages/Applications.jsx';
 import ManualApply from './pages/ManualApply.jsx';
 import HrContacts from './pages/HrContacts.jsx';
+import ScrapeStatus from './pages/ScrapeStatus.jsx';
+import Credentials from './pages/Credentials.jsx';
+import Companies from './pages/Companies.jsx';
 import Settings from './pages/Settings.jsx';
 
 export default function App() {
@@ -16,6 +19,9 @@ export default function App() {
         <Route path="/applications" element={<Applications />} />
         <Route path="/manual-apply" element={<ManualApply />} />
         <Route path="/hr-contacts" element={<HrContacts />} />
+        <Route path="/scrape-status" element={<ScrapeStatus />} />
+        <Route path="/credentials" element={<Credentials />} />
+        <Route path="/companies" element={<Companies />} />
         <Route path="/settings" element={<Settings />} />
       </Routes>
     </Layout>

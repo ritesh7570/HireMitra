@@ -3,7 +3,8 @@ import multer from 'multer';
 import { extractResumeText } from '../services/resumeParser.js';
 import { buildHrListExtractionPrompt } from '../prompts/hrListExtractionPrompt.js';
 import { createAiClientFromEnv } from '../services/applicationProcessor.js';
-import { listHrContacts, saveHrContacts, setHrContactSent } from '../services/hrContactStore.js';
+import { listHrContacts, saveHrContacts, setHrContactSent, getHrContactStats } from '../services/hrContactStore.js';
+import { runDailyHrBatch, getBatchState } from '../services/hrBatchSender.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 15 * 1024 * 1024 } });
@@ -39,7 +40,12 @@ router.get('/', async (req, res) => {
   try {
     const page = Math.max(Number(req.query.page) || 1, 1);
     const limit = Math.min(Math.max(Number(req.query.limit) || 50, 1), 200);
-    res.json(await listHrContacts({ page, limit }));
+    const search = typeof req.query.search === 'string' ? req.query.search : '';
+    const [list, stats] = await Promise.all([
+      listHrContacts({ page, limit, search }),
+      getHrContactStats()
+    ]);
+    res.json({ ...list, ...stats });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -91,6 +97,29 @@ router.post('/upload', upload.single('file'), async (req, res) => {
       chunks: chunks.length,
       chunkFailures: chunkErrors.length
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/status', async (req, res) => {
+  try {
+    const [stats, state] = await Promise.all([getHrContactStats(), getBatchState()]);
+    res.json({ ...stats, lastRunDate: state.lastRunDate || null });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Manual/on-demand batch — separate from the automatic daily run on server start.
+// Bypasses the "already ran today" lock (force: true) so a small test send can happen
+// even if today's automatic batch already ran or hasn't yet; tomorrow's automatic run
+// is unaffected.
+router.post('/send-batch', async (req, res) => {
+  try {
+    const count = Math.min(Math.max(Number(req.body.count) || 5, 1), 100);
+    const result = await runDailyHrBatch({ batchSize: count, force: true });
+    res.json(result);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

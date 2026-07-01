@@ -7,3 +7,7 @@ output/*.pdf
 data/profile.json
 data/scraped_jobs.json
 data/hr_batch_state.json
+data/uploaded_resume.*
+data/scrape_runs/
+data/credentials.json
+data/sessions/

@@ -11,3 +11,7 @@ server/output/*.pdf
 server/data/profile.json
 server/data/scraped_jobs.json
 server/data/hr_batch_state.json
+server/data/uploaded_resume.*
+server/data/scrape_runs/
+server/data/credentials.json
+server/data/sessions/

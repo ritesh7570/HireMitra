@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { extractResumeText } from '../services/resumeParser.js';
 import { buildProfileExtractionPrompt } from '../prompts/profileExtractionPrompt.js';
 import { getProfileMeta, updateCandidateProfile } from '../services/profileStore.js';
@@ -7,6 +10,8 @@ import { createAiClientFromEnv } from '../services/applicationProcessor.js';
 
 const router = Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const serverDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const dataDir = path.join(serverDir, 'data');
 
 router.get('/', (req, res) => {
   res.json(getProfileMeta());
@@ -30,9 +35,18 @@ router.post('/resume', upload.single('resume'), async (req, res) => {
       'Profile extraction'
     );
 
+    // Keep the literal uploaded file (not just its extracted text) so anything that
+    // wants to attach "the real resume" can, instead of an AI-tailored one.
+    const ext = path.extname(req.file.originalname) || '.pdf';
+    const uploadedResumePath = path.join(dataDir, `uploaded_resume${ext}`);
+    await fs.mkdir(dataDir, { recursive: true });
+    await fs.writeFile(uploadedResumePath, req.file.buffer);
+
     const updated = await updateCandidateProfile({
       profileText: extracted.profileText,
-      contact: extracted.contact
+      contact: extracted.contact,
+      uploadedResumePath,
+      uploadedResumeFilename: req.file.originalname
     });
 
     res.json(updated);

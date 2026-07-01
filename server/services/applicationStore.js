@@ -34,7 +34,8 @@ const applicationSchema = new mongoose.Schema(
         'notified',
         'referral_sent',
         'rejected',
-        'interview'
+        'interview',
+        'captcha_blocked'
       ],
       default: 'drafted'
     }

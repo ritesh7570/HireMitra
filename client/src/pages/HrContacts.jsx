@@ -3,17 +3,24 @@ import { getHrContacts, setHrContactSent, uploadHrList } from '../api.js';
 
 export default function HrContacts() {
   const [data, setData] = useState(null);
+  const [search, setSearch] = useState('');
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
 
-  async function load() {
-    setData(await getHrContacts());
+  async function load(searchTerm = search) {
+    setData(await getHrContacts(1, searchTerm));
   }
 
   useEffect(() => {
     load().catch((err) => setError(err.message));
   }, []);
+
+  function onSearchChange(event) {
+    const value = event.target.value;
+    setSearch(value);
+    load(value).catch((err) => setError(err.message));
+  }
 
   async function onUpload(event) {
     const file = event.target.files?.[0];
@@ -38,9 +45,9 @@ export default function HrContacts() {
     }
   }
 
-  async function toggleSent(contact) {
+  async function toggleSent(hr) {
     try {
-      await setHrContactSent(contact._id, !contact.emailSent);
+      await setHrContactSent(hr._id, !hr.emailSent);
       await load();
     } catch (err) {
       setError(err.message);
@@ -52,7 +59,7 @@ export default function HrContacts() {
       <div className="page-header">
         <div>
           <h1>HR Contacts</h1>
-          <p>Upload a list of HR/recruiter contacts — up to 20 get cold-emailed automatically each day.</p>
+          <p>Grouped by company — up to 20 not-yet-emailed contacts get cold-emailed automatically each day.</p>
         </div>
         <label className="button">
           {uploading ? 'Uploading...' : 'Upload PDF/DOCX'}
@@ -73,50 +80,75 @@ export default function HrContacts() {
               <strong>{data.total}</strong>
             </div>
             <div className="stat-card">
+              <span>Companies</span>
+              <strong>{data.totalCompanies}</strong>
+            </div>
+            <div className="stat-card">
               <span>Emailed</span>
               <strong>{data.sentCount}</strong>
             </div>
             <div className="stat-card">
               <span>Remaining</span>
-              <strong>{data.total - data.sentCount}</strong>
+              <strong>{data.remaining}</strong>
             </div>
           </div>
 
-          <div className="panel table-wrap">
-            {data.items.length === 0 ? (
-              <p className="muted">No HR contacts yet — upload a PDF or DOCX list to get started.</p>
+          <input
+            type="text"
+            placeholder="Search by company name..."
+            value={search}
+            onChange={onSearchChange}
+            style={{ maxWidth: '320px' }}
+          />
+
+          <div className="page-stack">
+            {data.companies.length === 0 ? (
+              <p className="empty-state">
+                {search ? `No companies matching "${search}".` : 'No HR contacts yet — upload a PDF or DOCX list to get started.'}
+              </p>
             ) : (
-              <table>
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>Company</th>
-                    <th>Email</th>
-                    <th>Role</th>
-                    <th>Sent</th>
-                    <th>Sent At</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.items.map((contact) => (
-                    <tr key={contact._id}>
-                      <td>{contact.name || '—'}</td>
-                      <td>{contact.company || '—'}</td>
-                      <td>{contact.email}</td>
-                      <td>{contact.role || '—'}</td>
-                      <td>
-                        <input
-                          type="checkbox"
-                          checked={contact.emailSent}
-                          onChange={() => toggleSent(contact)}
-                          title="Mark as sent/unsent"
-                        />
-                      </td>
-                      <td>{contact.emailedAt ? new Date(contact.emailedAt).toLocaleString() : '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              data.companies.map((group) => (
+                <div key={group._id} className="panel table-wrap">
+                  <h3>{group.company} <span className="muted">({group.hrs.length})</span></h3>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Email</th>
+                        <th>Role</th>
+                        <th>LinkedIn</th>
+                        <th>Sent</th>
+                        <th>Sent At</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.hrs.map((hr) => (
+                        <tr key={hr._id}>
+                          <td>{hr.name || '—'}</td>
+                          <td>{hr.email}</td>
+                          <td>{hr.role || '—'}</td>
+                          <td>
+                            {hr.linkedin ? (
+                              <a href={hr.linkedin.startsWith('http') ? hr.linkedin : `https://${hr.linkedin}`} target="_blank" rel="noreferrer">
+                                Profile
+                              </a>
+                            ) : '—'}
+                          </td>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={hr.emailSent}
+                              onChange={() => toggleSent(hr)}
+                              title="Mark as sent/unsent"
+                            />
+                          </td>
+                          <td>{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))
             )}
           </div>
         </>

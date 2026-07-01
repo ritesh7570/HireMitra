@@ -7,7 +7,7 @@ import fsSync from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAiClientFromEnv } from './applicationProcessor.js';
-import { getCandidateProfile } from './profileStore.js';
+import { getCandidateProfile, getUploadedResumePath } from './profileStore.js';
 import { tailorResume } from './resumeTailor.js';
 import { sendColdEmail } from './emailService.js';
 import { buildGenericColdEmailPrompt } from '../prompts/genericColdEmailPrompt.js';
@@ -50,11 +50,18 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-export async function runDailyHrBatch({ batchSize = 20 } = {}) {
+export async function getBatchState() {
+  return readState();
+}
+
+// force=true bypasses the "already ran today" lock for an on-demand/manual batch
+// (e.g. a small test send) without disturbing the automatic daily schedule — it still
+// writes lastRunDate at the end, so the next automatic check this same day stays a no-op.
+export async function runDailyHrBatch({ batchSize = 20, force = false } = {}) {
   console.log('HR batch: checking whether today\'s batch has run yet...');
   const today = todayKey();
   const state = await readState();
-  if (state.lastRunDate === today) {
+  if (!force && state.lastRunDate === today) {
     console.log('HR batch: already ran today, skipping.');
     return { skipped: true, reason: 'Already ran today.' };
   }
@@ -69,15 +76,22 @@ export async function runDailyHrBatch({ batchSize = 20 } = {}) {
   const aiClient = createAiClientFromEnv();
   const profile = getCandidateProfile();
 
-  console.log(`HR batch: tailoring one generic resume for ${contacts.length} contact(s)...`);
-  const resumeResult = await tailorResume({ jdText: GENERIC_JD_TEXT, profile, aiClient, outputDir });
-  const tailoredResumePath = resumeResult.pdfPath || resumeResult.texPath;
+  const uploadedResumePath = getUploadedResumePath();
+  let tailoredResumePath = uploadedResumePath;
+  if (uploadedResumePath) {
+    console.log(`HR batch: using the literal uploaded resume file (${uploadedResumePath}).`);
+  } else {
+    console.log(`HR batch: no uploaded resume on file — tailoring a generic one for ${contacts.length} contact(s)...`);
+    const resumeResult = await tailorResume({ jdText: GENERIC_JD_TEXT, profile, aiClient, outputDir });
+    tailoredResumePath = resumeResult.pdfPath || resumeResult.texPath;
+  }
 
   const template = await aiClient.generateJson(
     buildGenericColdEmailPrompt({ profile }),
     'Generic cold email template'
   );
 
+  const resumeExt = tailoredResumePath ? path.extname(tailoredResumePath) || '.pdf' : '.pdf';
   let sent = 0;
   let failed = 0;
 
@@ -90,7 +104,7 @@ export async function runDailyHrBatch({ batchSize = 20 } = {}) {
         gmailUser: process.env.GMAIL_USER,
         gmailAppPassword: process.env.GMAIL_APP_PASSWORD,
         attachments: tailoredResumePath
-          ? [{ filename: 'Ritesh_Kumar_Resume.pdf', path: tailoredResumePath }]
+          ? [{ filename: `Ritesh_Kumar_Resume${resumeExt}`, path: tailoredResumePath }]
           : []
       });
       await setHrContactSent(contact._id, true);

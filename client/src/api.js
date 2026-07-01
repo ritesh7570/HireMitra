@@ -35,7 +35,18 @@ async function uploadFile(url, fieldName, file) {
 
 export const uploadResume = (file) => uploadFile('/api/profile/resume', 'resume', file);
 
-export const getHrContacts = (page = 1) => api(`/api/hr-contacts?page=${page}&limit=50`);
+export const getHrContacts = (page = 1, search = '') =>
+  api(`/api/hr-contacts?page=${page}&limit=50&search=${encodeURIComponent(search)}`);
 export const uploadHrList = (file) => uploadFile('/api/hr-contacts/upload', 'file', file);
 export const setHrContactSent = (id, emailSent) =>
   api(`/api/hr-contacts/${id}`, { method: 'PATCH', body: JSON.stringify({ emailSent }) });
+export const getHrBatchStatus = () => api('/api/hr-contacts/status');
+export const sendHrBatch = (count) =>
+  api('/api/hr-contacts/send-batch', { method: 'POST', body: JSON.stringify({ count }) });
+export const getScrapeRuns = (limit = 10) => api(`/api/scrape/runs?limit=${limit}`);
+
+export const getCredentials = () => api('/api/credentials');
+export const setCredentials = (platform, body) =>
+  api(`/api/credentials/${platform}`, { method: 'PUT', body: JSON.stringify(body) });
+export const deleteCredentials = (platform) => api(`/api/credentials/${platform}`, { method: 'DELETE' });
+export const testLogin = (platform) => api(`/api/credentials/${platform}/test-login`, { method: 'POST' });

@@ -16,7 +16,9 @@ function seedIfMissing() {
   const seed = {
     profileText: DEFAULT_PROFILE_TEXT,
     contact: DEFAULT_CONTACT,
-    updatedAt: null
+    updatedAt: null,
+    uploadedResumePath: null,
+    uploadedResumeFilename: null
   };
   fsSync.mkdirSync(path.dirname(profilePath), { recursive: true });
   fsSync.writeFileSync(profilePath, JSON.stringify(seed, null, 2), 'utf8');
@@ -34,14 +36,29 @@ export function getCandidateContact() {
 }
 
 export function getProfileMeta() {
-  return { profileText: cache.profileText, contact: cache.contact, updatedAt: cache.updatedAt };
+  return {
+    profileText: cache.profileText,
+    contact: cache.contact,
+    updatedAt: cache.updatedAt,
+    uploadedResumePath: cache.uploadedResumePath || null,
+    uploadedResumeFilename: cache.uploadedResumeFilename || null
+  };
 }
 
-export async function updateCandidateProfile({ profileText, contact }) {
+// Returns the path to the literal file the candidate uploaded (PDF/DOCX, as-is), if any
+// — used when something should attach the real uploaded resume rather than an
+// AI-tailored one. Null until the first successful upload.
+export function getUploadedResumePath() {
+  return cache.uploadedResumePath || null;
+}
+
+export async function updateCandidateProfile({ profileText, contact, uploadedResumePath, uploadedResumeFilename }) {
   cache = {
     profileText: profileText || cache.profileText,
     contact: { ...cache.contact, ...(contact || {}) },
-    updatedAt: new Date().toISOString()
+    updatedAt: new Date().toISOString(),
+    uploadedResumePath: uploadedResumePath || cache.uploadedResumePath || null,
+    uploadedResumeFilename: uploadedResumeFilename || cache.uploadedResumeFilename || null
   };
   await fs.mkdir(path.dirname(profilePath), { recursive: true });
   await fs.writeFile(profilePath, JSON.stringify(cache, null, 2), 'utf8');

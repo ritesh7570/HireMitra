@@ -12,6 +12,8 @@ import scrapeRouter from './routes/scrape.js';
 import resetRouter from './routes/reset.js';
 import profileRouter from './routes/profile.js';
 import hrContactsRouter from './routes/hrContacts.js';
+import credentialsRouter from './routes/credentials.js';
+import companiesRouter from './routes/companies.js';
 import { runDailyHrBatch } from './services/hrBatchSender.js';
 
 const app = express();
@@ -41,6 +43,8 @@ app.use('/api/scrape', scrapeRouter);
 app.use('/api/reset', resetRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/hr-contacts', hrContactsRouter);
+app.use('/api/credentials', credentialsRouter);
+app.use('/api/companies', companiesRouter);
 
 app.use(express.static(clientBuild));
 app.get('/*splat', (req, res) => {

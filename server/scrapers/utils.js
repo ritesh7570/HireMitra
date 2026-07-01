@@ -12,8 +12,8 @@ export function randomDelay(min = 1500, max = 3500) {
   return new Promise((resolve) => setTimeout(resolve, waitMs));
 }
 
-export async function createBrowserPage() {
-  const browser = await chromium.launch({ headless: true });
+export async function createBrowserPage({ headless = true } = {}) {
+  const browser = await chromium.launch({ headless });
   const context = await browser.newContext({
     userAgent,
     viewport: { width: 1366, height: 768 },

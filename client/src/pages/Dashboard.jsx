@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { getStats, triggerScrape } from '../api.js';
 import EmailChart from '../components/EmailChart.jsx';
+import PerformanceChart from '../components/PerformanceChart.jsx';
 import StatsCard from '../components/StatsCard.jsx';
 import StatusBadge from '../components/StatusBadge.jsx';
 import Spinner from '../components/Spinner.jsx';
+import TodayPlan from '../components/TodayPlan.jsx';
 
 export default function Dashboard() {
   const [stats, setStats] = useState(null);
@@ -29,10 +31,11 @@ export default function Dashboard() {
       <div className="page-header">
         <div>
           <h1>Dashboard</h1>
-          <p>Daily sending, recent activity, and pipeline controls.</p>
+          <p>Daily sending, performance overview, and pipeline controls.</p>
         </div>
         <button type="button" onClick={runPipeline}>Run full pipeline now</button>
       </div>
+      <p className="notice info">UI improved: refreshed dashboard design, charts, and mobile-friendly data presentation.</p>
       {message && <p className="notice">{message}</p>}
 
       {!stats ? (
@@ -45,7 +48,13 @@ export default function Dashboard() {
             <StatsCard label="Emails This Week" value={stats.weekCount} />
             <StatsCard label="Average Score" value={stats.avgScore} />
           </div>
-          <EmailChart data={stats.dailyEmailChart} />
+
+          <div className="chart-grid">
+            <EmailChart data={stats.dailyEmailChart} />
+            <PerformanceChart recent={stats.recent} />
+          </div>
+
+          <TodayPlan />
           <div className="panel">
             <h2>Recent Activity</h2>
             {stats.recent.length === 0 ? (

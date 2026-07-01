@@ -9,7 +9,9 @@ const COLORS = {
   rejected: 'badge-red',
   interview: 'badge-green',
   skipped: 'badge-muted',
-  failed: 'badge-red'
+  failed: 'badge-red',
+  running: 'badge-blue',
+  success: 'badge-green'
 };
 
 export default function StatusBadge({ status }) {
