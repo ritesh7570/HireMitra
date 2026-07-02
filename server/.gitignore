@@ -11,3 +11,4 @@ data/uploaded_resume.*
 data/scrape_runs/
 data/credentials.json
 data/sessions/
+data/linkedin_network_state.json

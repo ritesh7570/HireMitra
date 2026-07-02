@@ -9,6 +9,7 @@ import { autoApply, isWhitelisted } from '../applicators/index.js';
 import { sendJobNotification } from '../services/notifier.js';
 import { getCandidateProfile } from '../services/profileStore.js';
 import { findHrContact } from '../services/hrFinder.js';
+import { runNetworkingForJob } from '../applicators/linkedinNetworking.js';
 
 export async function processJob(job) {
   const sourceJob = job.data;
@@ -111,11 +112,31 @@ export async function processJob(job) {
     await result.saved.save();
   }
 
+  // LinkedIn referral networking — runs after the main pipeline, independent of apply/notify
+  // outcome. Only fires when LINKEDIN_NETWORKING_ENABLED=true in .env. Never throws — a
+  // networking failure should never cause the whole job to fail.
+  let networkingResult = null;
+  try {
+    networkingResult = await runNetworkingForJob(sourceJob, {
+      tailoredResumePath: result.tailoredResumePath
+    });
+    if (networkingResult.sent > 0 || networkingResult.reason) {
+      console.log(
+        `[linkedin-networking] ${sourceJob.company}/${sourceJob.title}: ` +
+          `sent=${networkingResult.sent} skipped=${networkingResult.skipped} ` +
+          `dryRun=${networkingResult.dryRun} ${networkingResult.reason || ''}`
+      );
+    }
+  } catch (error) {
+    console.warn(`[linkedin-networking] Uncaught error for ${sourceJob.company}: ${error.message}`);
+  }
+
   return {
     company: result.company,
     role: result.role,
     score: matchScore,
     status: finalStatus,
-    emailSent: result.emailSent
+    emailSent: result.emailSent,
+    networking: networkingResult
   };
 }
