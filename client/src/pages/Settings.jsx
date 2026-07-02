@@ -33,15 +33,14 @@ export default function Settings() {
       <div className="page-header">
         <div>
           <h1>Settings</h1>
-          <p>Local configuration helpers. File editing endpoints are coming next.</p>
+          <p>Manage profile data, resume uploads, and reset actions.</p>
         </div>
       </div>
       <div className="panel settings-grid">
         <div>
           <h2>Resume</h2>
           <p className="muted">
-            Upload your latest resume (PDF or DOCX). The AI folds it into your profile,
-            which every future job's tailored resume and cold email is generated from.
+            Upload your latest resume to refresh the profile used for future tailoring.
           </p>
           <input type="file" accept=".pdf,.docx" onChange={onUpload} disabled={uploading} />
           {uploading && <p className="muted">Updating profile from resume...</p>}
@@ -55,7 +54,7 @@ export default function Settings() {
         </div>
         <div>
           <h2>Environment</h2>
-          <p className="muted">Edit `server/.env` for scrape keywords, location, threshold, and dry-run flags.</p>
+          <p className="muted">Adjust scrape keywords, location, threshold, and dry-run mode in the server config.</p>
         </div>
         <div>
           <h2>Reset</h2>

@@ -1,28 +1,37 @@
 import { NavLink } from 'react-router-dom';
+import AppIcon from './AppIcon.jsx';
 
 const links = [
-  ['/', 'Dashboard'],
-  ['/jobs', 'Jobs'],
-  ['/applications', 'Applications'],
-  ['/manual-apply', 'Manual Apply'],
-  ['/hr-contacts', 'HR Contacts'],
-  ['/scrape-status', 'Scrape Status'],
-  ['/credentials', 'Credentials'],
-  ['/companies', 'Companies'],
-  ['/settings', 'Settings']
+  ['/', 'Dashboard', 'dashboard'],
+  ['/jobs', 'Jobs', 'jobs'],
+  ['/applications', 'Applications', 'applications'],
+  ['/manual-apply', 'Manual Apply', 'apply'],
+  ['/hr-contacts', 'HR Contacts', 'hr'],
+  ['/scrape-status', 'Scrape Status', 'scrape'],
+  ['/credentials', 'Credentials', 'credentials'],
+  ['/companies', 'Companies', 'companies'],
+  ['/settings', 'Settings', 'settings']
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = false, onClose }) {
   return (
-    <aside className="sidebar">
-      <div className="brand">Job Agent</div>
-      <nav>
-        {links.map(([to, label]) => (
-          <NavLink key={to} to={to} end={to === '/'}>
-            {label}
-          </NavLink>
-        ))}
-      </nav>
-    </aside>
+    <>
+      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <div className="brand">
+          <span className="brand-mark"><AppIcon name="sparkles" /></span>
+          <span>HireMate</span>
+        </div>
+        <p className="sidebar-subtitle">Automate applications, outreach, and follow-up.</p>
+        <nav>
+          {links.map(([to, label, icon]) => (
+            <NavLink key={to} to={to} end={to === '/'} onClick={onClose}>
+              <span className="nav-icon"><AppIcon name={icon} /></span>
+              <span>{label}</span>
+            </NavLink>
+          ))}
+        </nav>
+      </aside>
+      {isOpen && <button type="button" className="sidebar-backdrop" onClick={onClose} aria-label="Close navigation" />}
+    </>
   );
 }

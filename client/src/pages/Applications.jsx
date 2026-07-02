@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getApplications } from '../api.js';
 import AppRow from '../components/AppRow.jsx';
+import AppCard from '../components/AppCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 export default function Applications() {
@@ -20,8 +21,8 @@ export default function Applications() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <h1>Applications</h1>
-          <p>Review statuses, resumes, and cold email sends.</p>
+          <h1>Applications Pipeline</h1>
+          <p>Track every role, status update, and follow-up action in one polished workspace.</p>
         </div>
       </div>
       {error && <p className="notice error">{error}</p>}
@@ -31,24 +32,35 @@ export default function Applications() {
         ) : items.length === 0 ? (
           <p className="empty-state">No applications yet — use Manual Apply or run the pipeline to create some.</p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Company</th>
-                <th>Role</th>
-                <th>Posted</th>
-                <th>Deadline</th>
-                <th>Score</th>
-                <th>Status</th>
-                <th>Email Sent</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => <AppRow key={item._id} application={item} onChanged={load} />)}
-            </tbody>
-          </table>
+          <>
+            <div className="desktop-table">
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Company</th>
+                      <th>Role</th>
+                      <th>Posted</th>
+                      <th>Deadline</th>
+                      <th>Score</th>
+                      <th>Status</th>
+                      <th>Email Sent</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => <AppRow key={item._id} application={item} onChanged={load} />)}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className="mobile-cards">
+              {items.map((item) => (
+                <AppCard key={item._id} application={item} onChanged={load} />
+              ))}
+            </div>
+          </>
         )}
       </div>
     </section>

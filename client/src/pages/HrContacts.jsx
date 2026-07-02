@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getHrContacts, setHrContactSent, uploadHrList } from '../api.js';
+import AppIcon from '../components/AppIcon.jsx';
 
 export default function HrContacts() {
   const [data, setData] = useState(null);
@@ -173,25 +174,41 @@ export default function HrContacts() {
                         <div className="hr-main">
                           <div>
                             <strong>{hr.name || '—'}</strong>
-                            <div className="muted small">{hr.role || '—'}</div>
+                            <div className="card-row">
+                              <span className="card-badge">
+                                <AppIcon name="profile" className="card-icon" />
+                                {hr.role || '—'}
+                              </span>
+                              <span className="card-badge">
+                                <AppIcon name="location" className="card-icon" />
+                                {group.location || 'Unknown location'}
+                              </span>
+                            </div>
                           </div>
                           <div className="hr-actions">
-                            <label className="button button-ghost small">
-                              <input type="checkbox" checked={hr.emailSent} onChange={() => toggleSent(hr)} />
-                              <span style={{ marginLeft: 8 }}>{hr.emailSent ? 'Sent' : 'Mark sent'}</span>
-                            </label>
+                            <button type="button" className="button ghost small" onClick={() => toggleSent(hr)}>
+                              <AppIcon name="check" className="card-icon" />
+                              <span>{hr.emailSent ? 'Sent' : 'Mark sent'}</span>
+                            </button>
                           </div>
                         </div>
                         <div className="hr-meta">
-                          <div className="muted">{hr.email}</div>
-                          <div>
+                          <div className="meta-item">
+                            <AppIcon name="email" />
+                            <span>{hr.email}</span>
+                          </div>
+                          <div className="meta-item">
                             {hr.linkedin ? (
                               <a href={hr.linkedin.startsWith('http') ? hr.linkedin : `https://${hr.linkedin}`} target="_blank" rel="noreferrer">
-                                View LinkedIn
+                                <AppIcon name="linkedin" className="card-icon" />
+                                <span>LinkedIn</span>
                               </a>
                             ) : '—'}
                           </div>
-                          <div className="muted small">{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : 'Not emailed'}</div>
+                          <div className="muted small card-row">
+                            <AppIcon name="calendar" className="card-icon" />
+                            <span>{hr.emailedAt ? new Date(hr.emailedAt).toLocaleString() : 'Not emailed'}</span>
+                          </div>
                         </div>
                       </div>
                     ))}

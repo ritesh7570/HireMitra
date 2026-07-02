@@ -34,7 +34,8 @@ export function createAiClientFromEnv() {
     geminiApiKey: process.env.GEMINI_API_KEY,
     geminiModel: process.env.GEMINI_MODEL,
     openrouterApiKey: process.env.OPENROUTER_API_KEY,
-    openrouterModel: process.env.OPENROUTER_MODEL
+    openrouterModel: process.env.OPENROUTER_MODEL,
+    groqApiKey: process.env.GROQ_API_KEY
   });
 }
 

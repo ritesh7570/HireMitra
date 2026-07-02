@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { getJobs, triggerScrape, deleteJob } from '../api.js';
 import Spinner from '../components/Spinner.jsx';
+import JobCard from '../components/JobCard.jsx';
 
 function ageLabel(iso) {
   if (!iso) return null;
@@ -109,61 +110,70 @@ export default function Jobs() {
               : 'No jobs match the current filter.'}
           </p>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Role</th>
-                <th>Company</th>
-                <th>Source</th>
-                <th>Location</th>
-                <th>Scraped</th>
-                <th>Email</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+          <>
+            <div className="desktop-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Role</th>
+                    <th>Company</th>
+                    <th>Source</th>
+                    <th>Location</th>
+                    <th>Scraped</th>
+                    <th>Email</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((job) => (
+                    <tr key={job.applyUrl}>
+                      <td style={{ fontWeight: 600 }}>{job.title}</td>
+                      <td>{job.company}</td>
+                      <td>
+                        <span className="badge badge-muted">{SOURCE_LABELS[job.source] || job.source}</span>
+                      </td>
+                      <td style={{ color: 'var(--muted)', fontSize: 13 }}>{job.location || '—'}</td>
+                      <td>
+                        {job.scrapedAt ? (
+                          <span className={`badge ${ageBadgeClass(job.scrapedAt)}`} title={new Date(job.scrapedAt).toLocaleString()}>
+                            {ageLabel(job.scrapedAt)}
+                          </span>
+                        ) : '—'}
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>{job.recruiterEmail || '—'}</td>
+                      <td>
+                        <div className="row-actions">
+                          <a
+                            href={job.applyUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="button ghost"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
+                          >
+                            Open
+                          </a>
+                          <button
+                            type="button"
+                            className="danger"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
+                            onClick={() => remove(job.applyUrl)}
+                            disabled={deleting === job.applyUrl}
+                          >
+                            {deleting === job.applyUrl ? '…' : 'Delete'}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mobile-cards">
               {visible.map((job) => (
-                <tr key={job.applyUrl}>
-                  <td style={{ fontWeight: 600 }}>{job.title}</td>
-                  <td>{job.company}</td>
-                  <td>
-                    <span className="badge badge-muted">{SOURCE_LABELS[job.source] || job.source}</span>
-                  </td>
-                  <td style={{ color: 'var(--muted)', fontSize: 13 }}>{job.location || '—'}</td>
-                  <td>
-                    {job.scrapedAt ? (
-                      <span className={`badge ${ageBadgeClass(job.scrapedAt)}`} title={new Date(job.scrapedAt).toLocaleString()}>
-                        {ageLabel(job.scrapedAt)}
-                      </span>
-                    ) : '—'}
-                  </td>
-                  <td style={{ fontSize: 12, color: 'var(--muted)' }}>{job.recruiterEmail || '—'}</td>
-                  <td>
-                    <div className="row-actions">
-                      <a
-                        href={job.applyUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="button ghost"
-                        style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
-                      >
-                        Open
-                      </a>
-                      <button
-                        type="button"
-                        className="danger"
-                        style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
-                        onClick={() => remove(job.applyUrl)}
-                        disabled={deleting === job.applyUrl}
-                      >
-                        {deleting === job.applyUrl ? '…' : 'Delete'}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
+                <JobCard key={job.applyUrl} job={job} onDelete={remove} />
               ))}
-            </tbody>
-          </table>
+            </div>
+          </>
         )}
       </div>
 

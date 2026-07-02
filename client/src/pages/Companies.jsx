@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import CompanyCard from '../components/CompanyCard.jsx';
 
 const API = '/api/companies';
 
@@ -117,7 +118,7 @@ export default function Companies() {
       <div className="page-header">
         <div>
           <h1>Company Watchlist</h1>
-          <p>Target companies whose career pages are scraped on every pipeline run. Jobs from these companies are prioritized in the queue.</p>
+          <p>Capture your dream targets, keep their careers pages under watch, and surface the best job openings automatically.</p>
         </div>
         <button type="button" onClick={startAdd}>+ Add Company</button>
       </div>
@@ -169,68 +170,82 @@ export default function Companies() {
       ) : companies.length === 0 ? (
         <div className="empty-state">No companies in watchlist yet. Add one above.</div>
       ) : (
-        <div className="panel">
-          <div className="table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>Company</th>
-                  <th>Careers URL</th>
-                  <th>Selector</th>
-                  <th>Priority</th>
-                  <th>Last Scraped</th>
-                  <th>Tags</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {companies.map((c) => (
-                  <tr key={c.id}>
-                    <td><strong>{c.name}</strong></td>
-                    <td style={{ maxWidth: 200, wordBreak: 'break-all', fontSize: 12 }}>
-                      <a href={c.careersUrl} target="_blank" rel="noreferrer">{c.careersUrl}</a>
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--muted)' }}>{c.selector || <em>AI</em>}</td>
-                    <td>
-                      <span className="badge badge-blue">{PRIORITY_LABELS[c.priority] || c.priority}</span>
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--muted)' }}>{timeAgo(c.lastScrapedAt)}</td>
-                    <td style={{ fontSize: 12 }}>{(c.tags || []).join(', ') || '—'}</td>
-                    <td>
-                      <div className="row-actions">
-                        <button
-                          type="button"
-                          className="ghost"
-                          style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
-                          onClick={() => testScrape(c)}
-                          disabled={testingId === c.id}
-                        >
-                          {testingId === c.id ? 'Scraping…' : 'Test Scrape'}
-                        </button>
-                        <button
-                          type="button"
-                          className="ghost"
-                          style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
-                          onClick={() => startEdit(c)}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="danger"
-                          style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
-                          onClick={() => remove(c.id)}
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    </td>
+        <>
+          <div className="panel desktop-table">
+            <div className="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Company</th>
+                    <th>Careers URL</th>
+                    <th>Selector</th>
+                    <th>Priority</th>
+                    <th>Last Scraped</th>
+                    <th>Tags</th>
+                    <th>Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {companies.map((c) => (
+                    <tr key={c.id}>
+                      <td><strong>{c.name}</strong></td>
+                      <td style={{ maxWidth: 200, wordBreak: 'break-all', fontSize: 12 }}>
+                        <a href={c.careersUrl} target="_blank" rel="noreferrer">{c.careersUrl}</a>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>{c.selector || <em>AI</em>}</td>
+                      <td>
+                        <span className="badge badge-blue">{PRIORITY_LABELS[c.priority] || c.priority}</span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--muted)' }}>{timeAgo(c.lastScrapedAt)}</td>
+                      <td style={{ fontSize: 12 }}>{(c.tags || []).join(', ') || '—'}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button
+                            type="button"
+                            className="ghost"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
+                            onClick={() => testScrape(c)}
+                            disabled={testingId === c.id}
+                          >
+                            {testingId === c.id ? 'Scraping…' : 'Test Scrape'}
+                          </button>
+                          <button
+                            type="button"
+                            className="ghost"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
+                            onClick={() => startEdit(c)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="danger"
+                            style={{ fontSize: 12, padding: '6px 12px', minHeight: 32 }}
+                            onClick={() => remove(c.id)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
-        </div>
+          <div className="mobile-cards">
+            {companies.map((company) => (
+              <CompanyCard
+                key={company.id}
+                company={company}
+                onEdit={startEdit}
+                onRemove={remove}
+                onTest={testScrape}
+                testingId={testingId}
+              />
+            ))}
+          </div>
+        </>
       )}
 
       {preview && (

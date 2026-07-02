@@ -1,4 +1,4 @@
-// One-shot test: runs LinkedIn networking for a fake job at Minerals Technologies Inc.
+// One-shot test: runs LinkedIn networking for a fake job at Razorpay.
 // Uses LINKEDIN_DRY_RUN=true (default) — finds profiles and logs what it WOULD do,
 // but never actually clicks Send. Safe to run repeatedly.
 //
@@ -15,12 +15,12 @@ await fs.rm(path.join(sessionsDir, 'linkedin-networking.throttle.json'), { force
 
 const FAKE_JOB = {
   title: 'Software Engineer',
-  company: 'Minerals Technologies Inc',
-  location: 'Remote',
+  company: 'Razorpay',
+  location: 'Bangalore, India',
   source: 'test',
-  applyUrl: 'https://www.mineralstech.com/careers',
-  jdText: 'Software engineer role at Minerals Technologies Inc.',
-  jobId: 'MTI-TEST-001'
+  applyUrl: 'https://razorpay.com/jobs/',
+  jdText: 'Software Engineer role at Razorpay.',
+  jobId: 'RAZORPAY-TEST-001'
 };
 
 console.log('=== LinkedIn Networking Test ===');

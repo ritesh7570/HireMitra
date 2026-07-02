@@ -30,12 +30,11 @@ export default function Dashboard() {
     <section className="page-stack">
       <div className="page-header">
         <div>
-          <h1>Dashboard</h1>
-          <p>Daily sending, performance overview, and pipeline controls.</p>
+          <h1>Overview</h1>
+          <p>Track outreach volume, recent activity, and trigger the next run.</p>
         </div>
-        <button type="button" onClick={runPipeline}>Run full pipeline now</button>
+        <button type="button" onClick={runPipeline}>Run pipeline</button>
       </div>
-      <p className="notice info">UI improved: refreshed dashboard design, charts, and mobile-friendly data presentation.</p>
       {message && <p className="notice">{message}</p>}
 
       {!stats ? (

@@ -2,7 +2,7 @@
 // only 5 requests/minute and 20/day per model — easy to blow through with a single
 // multi-step job (eligibility + resume tailoring + extraction + cold email + referral can
 // be 5+ Gemini calls). On a 429 (quota) or 503 (overloaded) error, falls back to
-// OpenRouter if OPENROUTER_API_KEY is configured, instead of failing the whole job.
+// OpenRouter, then Groq (if GROQ_API_KEY is set), instead of failing the whole job.
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { parseJsonResponse } from './json.js';
 
@@ -25,7 +25,8 @@ export class AiClient {
     geminiApiKey,
     geminiModel,
     openrouterApiKey,
-    openrouterModel
+    openrouterModel,
+    groqApiKey
   }) {
     this.provider = provider || 'gemini';
     this.geminiApiKey = geminiApiKey;
@@ -34,6 +35,7 @@ export class AiClient {
     this.openrouterModels = [
       ...new Set([openrouterModel, ...FALLBACK_FREE_MODELS].filter(Boolean))
     ];
+    this.groqApiKey = groqApiKey;
   }
 
   async generateJson(prompt, label) {
@@ -50,12 +52,26 @@ export class AiClient {
 
     try {
       return await this.generateWithGemini(prompt);
-    } catch (error) {
-      if (!this.openrouterApiKey || !RETRYABLE_STATUS_PATTERN.test(error.message)) {
-        throw error;
+    } catch (geminiError) {
+      if (!RETRYABLE_STATUS_PATTERN.test(geminiError.message) && !geminiError.message.includes('fetch')) {
+        throw geminiError;
       }
-      console.warn(`Gemini unavailable (${error.message.slice(0, 80)}...), falling back to OpenRouter.`);
-      return await this.generateWithOpenRouter(prompt);
+
+      if (this.openrouterApiKey) {
+        console.warn(`Gemini unavailable (${geminiError.message.slice(0, 80)}...), falling back to OpenRouter.`);
+        try {
+          return await this.generateWithOpenRouter(prompt);
+        } catch (openRouterError) {
+          console.warn(`OpenRouter exhausted, falling back to Groq: ${openRouterError.message.slice(0, 80)}`);
+        }
+      }
+
+      if (this.groqApiKey) {
+        console.warn('Falling back to Groq.');
+        return await this.generateWithGroq(prompt);
+      }
+
+      throw geminiError;
     }
   }
 
@@ -91,6 +107,39 @@ export class AiClient {
       }
     }
     throw new Error(`All OpenRouter models failed.\n${errors.join('\n')}`);
+  }
+
+  async generateWithGroq(prompt) {
+    if (!this.groqApiKey) throw new Error('GROQ_API_KEY not configured.');
+    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${this.groqApiKey}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'llama-3.3-70b-versatile',
+        temperature: 0.3,
+        max_tokens: 8000,
+        messages: [
+          {
+            role: 'user',
+            content: `${prompt}\n\nRespond with only the JSON object, no markdown fences, no commentary.`
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text().catch(() => '');
+      throw new Error(`Groq request failed (${response.status}): ${errorBody.slice(0, 200)}`);
+    }
+
+    const data = await response.json();
+    const content = data?.choices?.[0]?.message?.content;
+    if (!content) throw new Error('Groq response had no content');
+    console.log('[ai] Groq responded successfully.');
+    return content;
   }
 
   async callOpenRouterModel(prompt, model) {

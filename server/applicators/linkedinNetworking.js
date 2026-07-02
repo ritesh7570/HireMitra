@@ -248,44 +248,147 @@ function buildConnectionNote(name, jobTitle, company) {
   return note.slice(0, 300);
 }
 
-// ─── Send connection request (from People page card) ─────────────────────────
+// ─── Shared: dismiss any blocking modal (upsell, premium, etc.) ──────────────
+
+async function dismissAnyModal(page) {
+  // Look for any visible dialog/modal that isn't the invitation dialog.
+  const modal = page.getByRole('dialog').filter({ visible: true }).first();
+  if (!(await modal.count())) return;
+
+  const modalText = await modal.innerText({ timeout: 2000 }).catch(() => '');
+
+  // Premium / "out of free notes" upsell — close it without upgrading.
+  if (/premium|out of free|unlimited|upgrade/i.test(modalText)) {
+    console.log('[linkedin-networking] Premium upsell modal detected — dismissing.');
+    // Try close button first, then Escape.
+    const closeBtn = modal.getByRole('button', { name: /close|dismiss|×/i }).first();
+    if (await closeBtn.count()) {
+      await closeBtn.click({ timeout: 5000 }).catch(() => {});
+    } else {
+      await page.keyboard.press('Escape');
+    }
+    await randomDelay(500, 1000);
+    return;
+  }
+
+  // Any other unexpected modal — log it and dismiss with Escape.
+  if (modalText) {
+    console.warn(`[linkedin-networking] Unexpected modal: "${modalText.slice(0, 120).replace(/\n/g, ' ')}"`);
+    await page.screenshot({ path: 'data/debug_linkedin_modal.png', fullPage: false }).catch(() => {});
+    await page.keyboard.press('Escape');
+    await randomDelay(500, 800);
+  }
+}
+
+// ─── Send connection request (from People page card) — state-driven ──────────
+//
+// LinkedIn can show 3 different popup states after clicking Connect:
+//   CASE 1 — "Add a note" + "Send without a note"  → try to add referral note
+//   CASE 2 — Premium upsell after clicking "Add a note" → dismiss, send without note
+//   CASE 3 — Only "Send without a note" (free note limit hit) → click it directly
+//
+// After sending, Connect button becomes "Pending" → treated as success.
 
 async function sendConnectFromCard(page, profileUrl, { name, jobTitle, company }) {
-  // Find the Connect button in the card that contains this profile URL.
-  const connectBtn = page
-    .locator(`li:has(a[href*="${profileUrl.split('/in/')[1]?.split('?')[0]}"])`)
-    .locator('button:has-text("Connect")')
-    .first();
-  await connectBtn.click({ timeout: 10000 });
-  await randomDelay(1500, 3000);
+  const slug = profileUrl.split('/in/')[1]?.split('?')[0];
 
-  // Modal: try to add a personalised note; fall back to "Send without a note".
-  const addNoteBtn = page.locator('button:has-text("Add a note")').first();
+  // Find the Connect button inside the specific card for this profile.
+  // LinkedIn renders aria-label="Invite X to connect" but visible text is "Connect".
+  // Filter by visible text content, not accessible name.
+  const card = page.locator(`li:has(a[href*="${slug}"])`).first();
+  const connectBtn = card.locator('button').filter({ hasText: /^\s*Connect\s*$/ }).first();
+
+  await connectBtn.scrollIntoViewIfNeeded().catch(() => {});
+  const connectVisible = await connectBtn.isVisible().catch(() => false);
+  if (!connectVisible) {
+    // Button not present — card may already be Pending from a prior run.
+    const isPendingAlready = await card.locator('button').filter({ hasText: /^\s*Pending\s*$/ }).count().catch(() => 0);
+    if (isPendingAlready) {
+      console.log(`[linkedin-networking] ${name} already shows Pending — skipping.`);
+      return 'request_sent';
+    }
+    console.log(`[linkedin-networking] No Connect button found for ${name} — skipping card.`);
+    return 'skipped';
+  }
+  await connectBtn.click({ timeout: 10000 });
+  await randomDelay(1200, 2500);
+
+  // Wait for the invitation dialog to appear.
+  const inviteDialog = page.getByRole('dialog').filter({ visible: true }).first();
+  const appeared = await inviteDialog
+    .waitFor({ state: 'visible', timeout: 8000 })
+    .then(() => true)
+    .catch(() => false);
+
+  if (!appeared) {
+    // Dialog never opened — Connect may have sent directly or was already pending.
+    const isPending = await card.locator('button').filter({ hasText: /^\s*Pending\s*$/ }).count().catch(() => 0);
+    if (isPending) {
+      console.log(`[linkedin-networking] Connection request sent (no dialog) to ${name} at ${company}`);
+      return 'request_sent';
+    }
+    console.warn(`[linkedin-networking] No invite dialog appeared for ${name}`);
+    return 'error';
+  }
+
+  const dialogText = await inviteDialog.innerText({ timeout: 3000 }).catch(() => '');
+
+  // CASE 1 & 2: "Add a note" button is present — try to personalise.
+  const addNoteBtn = inviteDialog.getByRole('button', { name: /add a note/i });
   if (await addNoteBtn.count()) {
     await addNoteBtn.click({ timeout: 8000 });
     await randomDelay(800, 1500);
 
+    // Did a premium upsell appear instead of the note textarea? (CASE 2)
+    await dismissAnyModal(page);
+
+    // Check if the invitation dialog is still open after dismissing upsell.
+    const dialogStillOpen = await inviteDialog.isVisible().catch(() => false);
+    if (!dialogStillOpen) {
+      // Dialog closed — reopen by clicking Connect again.
+      await connectBtn.scrollIntoViewIfNeeded().catch(() => {});
+      await connectBtn.click({ timeout: 8000 }).catch(() => {});
+      await randomDelay(800, 1500);
+    }
+
+    // Try to fill the note textarea (may not exist if premium upsell closed dialog).
     const noteBox = page
-      .locator('textarea[name="message"], textarea#custom-message, textarea[aria-label*="note" i]')
+      .locator('textarea[name="message"], textarea#custom-message')
+      .or(page.getByRole('textbox', { name: /note|message/i }))
       .first();
-    if (await noteBox.count()) {
+    if (await noteBox.isVisible().catch(() => false)) {
       await noteBox.fill(buildConnectionNote(name, jobTitle, company), { timeout: 5000 });
       await randomDelay(800, 1500);
     }
   }
 
-  // Send — prefer "Send invitation" (with note), fall back to "Send without a note".
-  const sendBtn = page
-    .locator('button:has-text("Send invitation"), button:has-text("Send without a note")')
-    .filter({ visible: true })
-    .first();
-  if (!(await sendBtn.count())) {
+  // CASE 1 / 3: Send the invitation — prefer with note, fall back without.
+  // Re-check dialog state first.
+  const sendWithNote = page.getByRole('button', { name: /send invitation/i });
+  const sendWithoutNote = page.getByRole('button', { name: /send without a note/i });
+
+  if (await sendWithNote.isVisible().catch(() => false)) {
+    await sendWithNote.click({ timeout: 10000 });
+  } else if (await sendWithoutNote.isVisible().catch(() => false)) {
+    await sendWithoutNote.click({ timeout: 10000 });
+  } else {
+    // Unexpected state — log, dismiss and give up on this profile.
+    console.warn(`[linkedin-networking] Could not find send button for ${name} — dialog text: "${dialogText.slice(0, 80)}"`);
+    await page.screenshot({ path: 'data/debug_linkedin_connect.png', fullPage: false }).catch(() => {});
     await page.keyboard.press('Escape');
     return 'error';
   }
-  await sendBtn.click({ timeout: 10000 });
+
   await randomDelay(2000, 4000);
 
+  // Verify success: Connect button should now read "Pending".
+  const isPending = await card.locator('button').filter({ hasText: /^\s*Pending\s*$/ }).count().catch(() => 0);
+  if (isPending) {
+    console.log(`[linkedin-networking] Connection request sent to ${name} at ${company} (now Pending)`);
+    return 'request_sent';
+  }
+
+  // Button may have disappeared or changed — still treat as sent.
   console.log(`[linkedin-networking] Connection request sent to ${name} at ${company}`);
   return 'request_sent';
 }
@@ -293,42 +396,64 @@ async function sendConnectFromCard(page, profileUrl, { name, jobTitle, company }
 // ─── Send message to existing 1st-degree connection ──────────────────────────
 
 async function sendMessageToConnection(page, { profileUrl, name, jobTitle, company, jobId }) {
-  // Go to the person's profile and click Message — this opens a pre-filled conversation thread.
   const profileNorm = profileUrl.startsWith('http') ? profileUrl : `https://www.linkedin.com${profileUrl}`;
   await page.goto(profileNorm.replace(/\/$/, ''), { waitUntil: 'domcontentloaded', timeout: 45000 });
   await randomDelay(2000, 4000);
 
-  // Get full name from profile h1 if we only have first name.
+  // Get full name from profile h1.
   const profileName = await page.locator('h1').first().innerText({ timeout: 5000 }).then((t) => t.trim()).catch(() => name);
   const displayName = profileName || name;
 
-  const messageBtn = page.locator('button:has-text("Message"), a:has-text("Message")').filter({ visible: true }).first();
-  if (!(await messageBtn.count())) {
-    console.warn(`[linkedin-networking] No Message button on profile: ${profileNorm}`);
+  // Dismiss any modal that might be covering the page (premium upsell, etc.).
+  await dismissAnyModal(page);
+
+  // Verify this is actually a 1st-degree connection.
+  // Scan the top section of the profile for "· 1st", "· 2nd", "· 3rd" degree indicator.
+  const topCardText = await page
+    .locator('.pv-top-card, .ph5, main section').first()
+    .innerText({ timeout: 4000 })
+    .catch(() => '');
+  const degreeMatch = topCardText.match(/·\s*(1st|2nd|3rd\+?|[0-9]+(?:st|nd|rd|th)\+?)/i);
+  const degree = degreeMatch ? degreeMatch[1] : '';
+  if (degree && !degree.startsWith('1')) {
+    console.log(`[linkedin-networking] ${displayName} is ${degree} degree — not 1st degree, skipping message.`);
     return 'skipped';
   }
-  // Scroll the button into view and use JS click to bypass sticky-header interception.
+
+  const messageBtn = page
+    .getByRole('button', { name: /^message$/i })
+    .or(page.getByRole('link', { name: /^message$/i }))
+    .filter({ visible: true })
+    .first();
+
+  if (!(await messageBtn.count())) {
+    console.warn(`[linkedin-networking] No Message button on profile: ${profileNorm}`);
+    await page.screenshot({ path: 'data/debug_linkedin_msg.png', fullPage: false }).catch(() => {});
+    return 'skipped';
+  }
+
+  // JS click bypasses sticky-header pointer-event interception.
   await messageBtn.scrollIntoViewIfNeeded().catch(() => {});
   await messageBtn.evaluate((el) => el.click());
   await randomDelay(1500, 3000);
 
-  // The message modal pops up at the bottom right — wait for it.
-  // Dismiss any upsell/premium modal that LinkedIn may show between profile visits.
-  const upsellModal = page.locator('[data-test-modal-id="modal-upsell"], [data-test-modal-overlay]').first();
-  if (await upsellModal.count()) {
-    await page.keyboard.press('Escape');
-    await randomDelay(500, 1000);
-  }
+  // Dismiss any upsell modal that appeared after clicking Message.
+  await dismissAnyModal(page);
 
-  await page.waitForSelector('div.msg-form__contenteditable[role="textbox"], div[role="textbox"][aria-label*="message" i]', {
-    state: 'visible', timeout: 15000
-  }).catch(() => {});
+  // Wait for the message compose box to appear (bottom-right overlay).
+  await page
+    .waitForSelector('div.msg-form__contenteditable[role="textbox"], div[role="textbox"][aria-label*="message" i]', {
+      state: 'visible',
+      timeout: 15000
+    })
+    .catch(() => {});
 
   const messageBox = page
     .locator('div.msg-form__contenteditable[role="textbox"], div[role="textbox"][aria-label*="message" i]')
     .first();
-  if (!(await messageBox.count())) {
-    console.warn(`[linkedin-networking] Message box not found after clicking Message on ${profileNorm}`);
+
+  if (!(await messageBox.isVisible().catch(() => false))) {
+    console.warn(`[linkedin-networking] Message box not found for ${displayName} — URL: ${page.url()}`);
     await page.screenshot({ path: 'data/debug_linkedin_msg.png', fullPage: false }).catch(() => {});
     return 'error';
   }
@@ -339,21 +464,27 @@ async function sendMessageToConnection(page, { profileUrl, name, jobTitle, compa
     (jobId ? ` (Job ID: ${jobId})` : '') +
     ` and am very interested as a fresher. Would you be open to referring me if my profile is a good fit? I can share my tailored resume. Thank you!`;
 
-  // Use JS click to bypass any remaining overlay on the textbox.
+  // JS click avoids pointer-event overlay issues on contenteditable.
   await messageBox.evaluate((el) => el.click());
   await randomDelay(300, 600);
   await messageBox.pressSequentially(msg.slice(0, 1000), { delay: 20 });
   await randomDelay(1000, 2000);
 
+  // Send button is enabled once text is present.
   const sendBtn = page
-    .locator('button.msg-form__send-button, button[aria-label*="Send message"], button:has-text("Send")')
+    .locator('button.msg-form__send-button')
+    .or(page.getByRole('button', { name: /send message/i }))
     .filter({ visible: true })
     .first();
-  if (!(await sendBtn.count())) return 'error';
+
+  if (!(await sendBtn.isVisible().catch(() => false))) {
+    console.warn(`[linkedin-networking] Send button not found for ${displayName}`);
+    return 'error';
+  }
   await sendBtn.click({ timeout: 10000 });
   await randomDelay(2000, 4000);
 
-  // Close the message overlay so it doesn't interfere with subsequent actions.
+  // Close the overlay so it doesn't interfere with the next profile visit.
   await page.keyboard.press('Escape');
   await randomDelay(500, 800);
 
@@ -438,7 +569,8 @@ export async function runNetworkingForJob(job, { tailoredResumePath } = {}) {
       } else skipped++;
     }
 
-    // Step 3: If cap not reached, go to People tab and send connect requests to others.
+    // Step 3: Go to People tab if daily cap not yet reached (whether or not we found "works here" people).
+    // This fills remaining slots with connect requests when 1st-degree connections were all skipped/already contacted.
     if (sent < limit && (await canSendRequest())) {
       const ok = await goToCompanyPeoplePage(page, companyUrl);
       if (ok) {
@@ -461,6 +593,9 @@ export async function runNetworkingForJob(job, { tailoredResumePath } = {}) {
             name: card.name,
             jobTitle: job.title,
             company: job.company
+          }).catch((err) => {
+            console.warn(`[linkedin-networking] sendConnectFromCard error for ${card.name}: ${err.message}`);
+            return 'error';
           });
           results.push({ profileUrl: card.profileUrl, name: card.name, outcome, degree: '2nd+' });
           contactedThisRun.add(card.profileUrl);
